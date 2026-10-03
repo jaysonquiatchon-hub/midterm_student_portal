@@ -80,8 +80,8 @@ Route::middleware(['auth', 'portal.access', EnsureUserRole::class.':admin'])->gr
     Route::resource('courses', CourseController::class)->except(['show']);
     Route::post('/courses/{course}/archive', [CourseController::class, 'archive'])->name('courses.archive');
 
+    // Students Management (Kasama na rito ang index, create, store, show, edit, update, destroy)
     Route::resource('students', StudentController::class);
-    Route::post('/students/{student}/archive', [StudentController::class, 'archive'])->name('students.archive');
     Route::post('/students/{student}/enroll', [StudentController::class, 'enroll'])->name('students.enroll');
     Route::post('/students/{student}/courses/{course}/grade', [StudentController::class, 'updateGrade'])
         ->scopeBindings()

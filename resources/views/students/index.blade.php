@@ -27,13 +27,12 @@
             <td>{{ $student->year_level }}</td>
             <td class="text-end">
                 <a href="{{ route('students.show', $student) }}" class="btn btn-sm btn-outline-primary">View</a>
-                <a href="{{ route('students.edit', $student) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
-                @if($student->status !== 'archived')
-                    <form action="{{ route('students.archive', $student) }}" method="POST" class="d-inline">
-                        @csrf
-                        <button class="btn btn-sm btn-outline-danger">Archive</button>
-                    </form>
-                @endif
+                
+                <form action="{{ route('students.destroy', $student) }}" method="POST" class="d-inline" onsubmit="return confirm('Sigurado ka bang gusto mong idelete ang estudyanteng ito?');">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                </form>
             </td>
         </tr>
         @empty

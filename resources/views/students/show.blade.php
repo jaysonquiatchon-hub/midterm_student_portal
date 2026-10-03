@@ -2,14 +2,30 @@
 
 @section('content')
 <div class="card border-0 shadow-sm rounded-3 p-4">
-    <!-- Student Header Information -->
-    <h2 class="fw-bold text-dark mb-1">{{ $student->first_name }} {{ $student->last_name }}</h2>
-    <p class="text-muted mb-1">
-        <strong>Student No:</strong> {{ $student->student_number }} | 
-        <strong>Program:</strong> {{ $student->program->name ?? 'No Program Assigned' }} | 
-        <strong>Year Level:</strong> Year {{ $student->year_level }}
-    </p>
-    <p class="text-muted mb-4"><strong>Email:</strong> {{ $student->email }}</p>
+    <!-- Student Header Information with Action Buttons -->
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h2 class="fw-bold text-dark mb-1">{{ $student->first_name }} {{ $student->last_name }}</h2>
+            <p class="text-muted mb-1">
+                <strong>Student No:</strong> {{ $student->student_number }} | 
+                <strong>Program:</strong> {{ $student->program->name ?? 'No Program Assigned' }} | 
+                <strong>Year Level:</strong> Year {{ $student->year_level }}
+            </p>
+            <p class="text-muted mb-0"><strong>Email:</strong> {{ $student->email }}</p>
+        </div>
+
+        <!-- Upper Right Action Buttons (Edit & Back) -->
+        <div class="d-flex gap-2">
+            <a href="{{ route('students.edit', $student) }}" class="btn btn-warning btn-sm fw-semibold px-3">
+                Edit
+            </a>
+            <a href="{{ route('students.index') }}" class="btn btn-secondary btn-sm fw-semibold px-3">
+                Back
+            </a>
+        </div>
+    </div>
+
+    <hr class="my-4 text-muted">
 
     <!-- Enrolled Courses & Grade Management Table -->
     <h4 class="fw-bold text-dark mb-3">Enrolled Courses</h4>
@@ -75,7 +91,7 @@
     </div>
 
     <!-- Enroll New Subject Form -->
-    <div class="card bg-light border-0 p-3 mb-4">
+    <div class="card bg-light border-0 p-3 mb-2">
         <h5 class="fw-bold text-dark mb-3">Enroll Course</h5>
         <form action="{{ route('students.enroll', $student->id) }}" method="POST" class="row g-3 align-items-center">
             @csrf
@@ -111,10 +127,6 @@
                 </button>
             </div>
         </form>
-    </div>
-
-    <div>
-        <a href="{{ route('students.index') }}" class="btn btn-secondary">Back</a>
     </div>
 </div>
 @endsection
