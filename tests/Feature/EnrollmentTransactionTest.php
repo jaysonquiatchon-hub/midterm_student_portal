@@ -245,6 +245,29 @@ class EnrollmentTransactionTest extends TestCase
             ->assertSee('Pending');
     }
 
+    public function test_admin_can_find_student_term_enrollment_requests_from_application_history(): void
+    {
+        $this->registerStudent('STU-2026-118');
+        $this->post('/student/enrollments', [
+            'academic_year' => '2026-2027',
+            'term' => '1st',
+        ]);
+        $enrollment = Enrollment::firstOrFail();
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $this->actingAs($admin)
+            ->get('/admin/enrollment-applications/history')
+            ->assertOk()
+            ->assertSee('Term Enrollment Requests')
+            ->assertSee('href="'.route('admin.enrollments.index').'"', false);
+
+        $this->get(route('admin.enrollments.index'))
+            ->assertOk()
+            ->assertSee($enrollment->reference_number)
+            ->assertSee($enrollment->academic_year)
+            ->assertSee($enrollment->term);
+    }
+
     public function test_students_cannot_open_admin_pages_or_write_grades(): void
     {
         $student = $this->registerStudent('STU-2026-102');

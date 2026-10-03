@@ -2,7 +2,12 @@
 
 @section('content')
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1>Enrollment Transactions</h1>
+    <h1>Term Enrollment Requests</h1>
+    <div class="btn-group" role="group" aria-label="Enrollment views">
+        <a href="{{ route('admin.enrollment-applications.index') }}" class="btn btn-outline-primary">Pending Applications</a>
+        <a href="{{ route('admin.enrollment-applications.history') }}" class="btn btn-outline-primary">Enrollment History</a>
+        <a href="{{ route('admin.enrollments.index') }}" class="btn btn-outline-primary active" aria-current="page">Term Enrollment Requests</a>
+    </div>
 </div>
 <form action="{{ route('admin.enrollments.index') }}" method="GET" class="row g-2 mb-3">
     <div class="col-md-6">

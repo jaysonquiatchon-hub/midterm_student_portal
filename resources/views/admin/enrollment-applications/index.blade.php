@@ -3,9 +3,10 @@
 @section('content')
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <h1 class="h2 mb-0">{{ $history ? 'Enrollment History' : 'Pending Applications' }}</h1>
-    <div class="btn-group" role="group" aria-label="Enrollment application views">
+    <div class="btn-group flex-wrap" role="group" aria-label="Enrollment views">
         <a href="{{ route('admin.enrollment-applications.index') }}" class="btn btn-outline-primary {{ ! $history ? 'active' : '' }}">Pending Applications</a>
         <a href="{{ route('admin.enrollment-applications.history') }}" class="btn btn-outline-primary {{ $history ? 'active' : '' }}">Enrollment History</a>
+        <a href="{{ route('admin.enrollments.index') }}" class="btn btn-outline-primary">Term Enrollment Requests</a>
     </div>
 </div>
 

@@ -48,6 +48,11 @@
                         @if (request()->routeIs('admin.enrollment-applications.*')) aria-current="page" @endif
                     >Enrollment Applications</a>
                     <a
+                        href="{{ route('admin.enrollments.index') }}"
+                        @class(['portal-nav-link', 'active' => request()->routeIs('admin.enrollments.*')])
+                        @if (request()->routeIs('admin.enrollments.*')) aria-current="page" @endif
+                    >Term Enrollment Requests</a>
+                    <a
                         href="{{ route('students.index') }}"
                         @class(['portal-nav-link', 'active' => request()->routeIs('students.*')])
                         @if (request()->routeIs('students.*')) aria-current="page" @endif
