@@ -17,7 +17,7 @@
             <div class="card-body p-4">
                 <div class="text-center mb-4">
                     <h3 class="fw-bold text-dark mb-1">Student Portal</h3>
-                    <p class="text-muted small mb-0">Enter your email or admin username to continue</p>
+                    <p class="text-muted small mb-0">Enter your credentials to access student records</p>
                 </div>
 
                 <form action="{{ route('portal.login.submit') }}" method="POST">
@@ -25,13 +25,13 @@
 
                     <!-- Username Field with Sticky Input -->
                     <div class="mb-3">
-                        <label for="username" class="form-label fw-semibold">Email or Admin Username</label>
+                        <label for="username" class="form-label fw-semibold">Username</label>
                         <input type="text" 
                                name="username" 
                                id="username" 
                                class="form-control @error('username') is-invalid @enderror" 
                                value="{{ old('username') }}" 
-                               placeholder="you@example.com or admin" 
+                               placeholder="e.g. admin" 
                                required 
                                autofocus>
                         @error('username')
@@ -63,8 +63,9 @@
             </div>
         </div>
 
-        <p class="text-center text-muted small mt-3">New student? <a href="{{ route('portal.register') }}">Create an account</a></p>
-        <p class="text-center text-muted small mt-2">Applying for enrollment? <a href="{{ route('enrollment.create') }}">Start an application</a></p>
+        <p class="text-center text-muted small mt-3">
+            Demo Credentials: <strong>admin</strong> / <strong>password123</strong>
+        </p>
     </div>
 </div>
 @endsection

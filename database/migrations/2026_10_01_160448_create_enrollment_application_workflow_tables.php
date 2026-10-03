@@ -17,7 +17,7 @@ return new class extends Migration
             $table->foreignId('course_id')->constrained()->restrictOnDelete();
             $table->timestamps();
 
-            $table->unique(['enrollment_application_id', 'course_id']);
+            $table->unique(['enrollment_application_id', 'course_id'], 'enrollment_app_subject_app_course_unique');
         });
     }
 

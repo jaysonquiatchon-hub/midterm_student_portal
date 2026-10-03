@@ -150,13 +150,14 @@ class CourseSeeder extends Seeder
                     Course::updateOrCreate(
                         ['code' => $course['code']],
                         [
-                            'title'      => $course['title'],
-                            'units'      => $course['units'],
+                            'title' => $course['title'],
+                            'units' => $course['units'],
                             'year_level' => $course['year_level'],
-                            'semester'   => $course['units'] === 6 && $course['year_level'] === 4
+                            'program_id' => $programId,
+                            'semester' => $course['units'] === 6 && $course['year_level'] === 4
                                 ? 'Summer'
                                 : ((int) substr($course['code'], -1) % 2 === 0 ? '2nd' : '1st'),
-                            'program_id' => $programId,
+                            'status' => 'active',
                         ]
                     );
                 }

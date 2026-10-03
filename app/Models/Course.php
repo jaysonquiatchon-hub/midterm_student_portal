@@ -11,7 +11,9 @@ class Course extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['department_id', 'code', 'title', 'units', 'year_level', 'semester', 'status', 'program_id'];
+    protected $fillable = [
+        'department_id', 'code', 'title', 'units', 'year_level', 'program_id', 'semester', 'status',
+    ];
 
     public function program(): BelongsTo
     {
@@ -20,17 +22,6 @@ class Course extends Model
 
     public function students(): BelongsToMany
     {
-        return $this->belongsToMany(Student::class)->withPivot('grade', 'enrollment_id')->withTimestamps();
-    }
-
-    public function enrollments(): BelongsToMany
-    {
-        return $this->belongsToMany(Enrollment::class, 'enrollment_course')->withTimestamps();
-    }
-
-    public function applications(): BelongsToMany
-    {
-        return $this->belongsToMany(EnrollmentApplication::class, 'enrollment_application_subject')
-            ->withTimestamps();
+        return $this->belongsToMany(Student::class)->withPivot('grade')->withTimestamps();
     }
 }

@@ -1,10 +1,10 @@
 <?php
 
-use App\Http\Middleware\EnsureUserRole;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use App\Http\Middleware\EnsureStudentPortalAccess;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -13,10 +13,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->redirectGuestsTo(fn (Request $request) => route('portal.login'));
         $middleware->alias([
-            'portal.access' => EnsureUserRole::class,
-            'role' => EnsureUserRole::class,
+            'portal.access' => EnsureStudentPortalAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

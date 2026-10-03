@@ -7,6 +7,34 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Student Portal
+
+The application provides a public course catalog and a session-protected student portal for student records, course enrollment, and grades.
+
+### Local setup
+
+1. Use PHP 8.4.1 or newer and install the Composer dependencies.
+2. Create a MySQL database and set `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` in `.env`.
+3. Run the database migrations:
+
+   ```bash
+   php artisan migrate
+   ```
+
+4. (Optional) Add 20 fictional students and any missing sample programs:
+
+   ```bash
+   php artisan db:seed --class=StudentDemoSeeder
+   ```
+
+5. Start the local web server:
+
+   ```bash
+   php artisan serve
+   ```
+
+After portal login, the dashboard summarizes students, active courses, programs, pending applications, student counts by program, and recently added students. The course catalog is available at `/courses`. Student management and grade updates require portal access.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

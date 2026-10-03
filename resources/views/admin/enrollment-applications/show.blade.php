@@ -6,7 +6,6 @@
         <div><h1 class="h3 fw-bold mb-1">{{ $application->application_number }}</h1><p class="text-muted mb-0">Submitted {{ $application->submitted_at?->format('F j, Y g:i A') }}</p></div>
         <span class="badge bg-{{ $application->status === 'approved' ? 'success' : ($application->status === 'rejected' ? 'danger' : 'secondary') }} fs-6">{{ ucwords(str_replace('_', ' ', $application->status)) }}</span>
     </div>
-    @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
     @if(session('warning'))<div class="alert alert-warning">{{ session('warning') }}</div>@endif
     @if($errors->any())<div class="alert alert-danger">{{ $errors->first() }}</div>@endif
 

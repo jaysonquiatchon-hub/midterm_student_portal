@@ -11,14 +11,6 @@
     </p>
     <p class="text-muted mb-4"><strong>Email:</strong> {{ $student->email }}</p>
 
-    <!-- Success Message Alert -->
-    @if(session('success'))
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            {{ session('success') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    @endif
-
     <!-- Enrolled Courses & Grade Management Table -->
     <h4 class="fw-bold text-dark mb-3">Enrolled Courses</h4>
     
@@ -58,7 +50,7 @@
                                     type="text" 
                                     name="grade" 
                                     value="{{ old('grade', $course->pivot->grade) }}" 
-                                    class="form-control form-control-sm" 
+                                    class="form-control form-control-sm @error('grade') is-invalid @enderror"
                                     placeholder="e.g. 1.25"
                                     style="max-width: 90px;"
                                 >
@@ -66,6 +58,9 @@
                                     Save
                                 </button>
                             </form>
+                            @error('grade')
+                                <div class="text-danger small mt-1">{{ $message }}</div>
+                            @enderror
                         </td>
                     </tr>
                 @empty
@@ -101,10 +96,13 @@
                         @endforeach
                     @else
                         <option value="" disabled selected>
-                            No remaining subjects available for {{ $student->department->name ?? 'this program' }}
+                            No remaining subjects available for {{ $student->program->name ?? 'this program' }}
                         </option>
                     @endif
                 </select>
+                @error('course_id')
+                    <div class="text-danger small mt-1">{{ $message }}</div>
+                @enderror
             </div>
 
             <div class="col-md-3 align-self-end">

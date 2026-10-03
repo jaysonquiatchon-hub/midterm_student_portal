@@ -10,15 +10,13 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->call(DepartmentSeeder::class);
         $this->call(ProgramSeeder::class);
         $this->call(CourseSeeder::class);
-        $this->call(AdminUserSeeder::class);
 
         // Seed Students and automatically enroll them in courses matching their program and year level
         Student::factory(30)->create()->each(function (Student $student) {
             // Find courses that belong to the student's program and year level
-            $matchingCourses = Course::where('program_id', $student->program_id)
+            $matchingCourses = Course::where('program', $student->program)
                 ->where('year_level', '<=', $student->year_level)
                 ->get();
 
