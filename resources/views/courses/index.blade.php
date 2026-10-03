@@ -3,7 +3,7 @@
 @section('content')
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="mb-0">Course Offerings</h1>
-    @if (session('portal_access'))
+    @if (session('portal_access') && auth()->user()?->role === 'admin')
         <a href="{{ route('students.index') }}" class="btn btn-outline-primary">Student Directory</a>
     @endif
 </div>

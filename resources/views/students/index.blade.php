@@ -28,11 +28,12 @@
             <td class="text-end">
                 <a href="{{ route('students.show', $student) }}" class="btn btn-sm btn-outline-primary">View</a>
                 <a href="{{ route('students.edit', $student) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
-                <form action="{{ route('students.destroy', $student) }}" method="POST" class="d-inline" onsubmit="return confirm('Delete this student?')">
-                    @csrf
-                    @method('DELETE')
-                    <button class="btn btn-sm btn-outline-danger">Delete</button>
-                </form>
+                @if($student->status !== 'archived')
+                    <form action="{{ route('students.archive', $student) }}" method="POST" class="d-inline">
+                        @csrf
+                        <button class="btn btn-sm btn-outline-danger">Archive</button>
+                    </form>
+                @endif
             </td>
         </tr>
         @empty

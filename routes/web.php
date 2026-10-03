@@ -1,71 +1,112 @@
 <?php
 
+use App\Http\Controllers\AdminEnrollmentApplicationController;
+use App\Http\Controllers\AdminEnrollmentController;
 use App\Http\Controllers\CourseController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EnrollmentApplicationController;
+use App\Http\Controllers\EnrollmentApplicationDocumentController;
+use App\Http\Controllers\PortalAuthController;
+use App\Http\Controllers\ProgramController;
 use App\Http\Controllers\StudentController;
-use Illuminate\Http\Request;
+use App\Http\Controllers\StudentPortalController;
+use App\Http\Middleware\EnsureUserRole;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
+// Public Welcome Page
+Route::get('/', fn () => view('welcome'));
+
+// ==========================================
+// AUTHENTICATION ROUTES
+// ==========================================
+Route::get('/student/login', [PortalAuthController::class, 'showStudentLogin'])->name('student.login');
+Route::post('/student/login', [PortalAuthController::class, 'studentLogin'])
+    ->middleware('throttle:5,1')
+    ->name('student.login.submit');
+
+Route::get('/admin/login', [PortalAuthController::class, 'showAdminLogin'])->name('admin.login');
+Route::post('/admin/login', [PortalAuthController::class, 'adminLogin'])
+    ->middleware('throttle:5,1')
+    ->name('admin.login.submit');
+
+Route::get('/portal/register', [PortalAuthController::class, 'create'])->name('portal.register');
+Route::post('/portal/register', [PortalAuthController::class, 'register'])
+    ->middleware('throttle:5,1')
+    ->name('portal.register.submit');
+
+Route::post('/portal/logout', [PortalAuthController::class, 'logout'])->name('portal.logout');
+
+// ==========================================
+// PUBLIC ENROLLMENT APPLICATION & CATALOG
+// ==========================================
+Route::controller(EnrollmentApplicationController::class)->group(function () {
+    Route::get('/enrollment', 'create')->name('enrollment.create');
+    Route::post('/enrollment/step/{step}', 'saveStep')->whereNumber('step')->name('enrollment.step');
+    Route::post('/enrollment/submit', 'submit')->name('enrollment.submit');
+    Route::post('/enrollment/cancel', 'cancel')->name('enrollment.cancel');
+    Route::get('/enrollment/success/{application}', 'success')->name('enrollment.success');
 });
 
-// Portal access page
-Route::get('/portal/login', function () {
-    return view('portal.login');
-})->name('portal.login');
+Route::get('/course-catalog', [CourseController::class, 'index'])->name('catalog.courses.index');
 
-// Portal access form submission
-Route::post('/portal/login', function (Request $request) {
-    $credentials = $request->validate([
-        'username' => 'required|string',
-        'password' => 'required|string',
-    ]);
+// ==========================================
+// STUDENT PORTAL (Protected)
+// ==========================================
+Route::middleware(['auth', 'portal.access', EnsureUserRole::class.':student'])
+    ->prefix('student')
+    ->name('student.')
+    ->group(function () {
+        Route::get('/dashboard', [StudentPortalController::class, 'index'])->name('dashboard');
+        Route::get('/profile/edit', [StudentPortalController::class, 'editProfile'])->name('profile.edit');
+        Route::put('/profile', [StudentPortalController::class, 'updateProfile'])->name('profile.update');
+        Route::get('/profile/photo', [StudentPortalController::class, 'profilePhoto'])->name('profile.photo');
+        Route::post('/profile/photo', [StudentPortalController::class, 'updateProfilePhoto'])->name('profile.photo.update');
+        Route::get('/enrollments/create', [StudentPortalController::class, 'createEnrollment'])->name('enrollments.create');
+        Route::post('/enrollments', [StudentPortalController::class, 'storeEnrollment'])->name('enrollments.store');
+        Route::get('/enrollments/{enrollment}', [StudentPortalController::class, 'showEnrollment'])->name('enrollments.show');
+    });
 
-    // Both Wrong
-    if ($credentials['username'] !== 'admin' && $credentials['password'] !== 'password123') {
-        return back()->withErrors([
-            'username' => 'Invalid username.',
-            'password' => 'Invalid password.',
-        ])->withInput($request->only('username'));
-    }
+// ==========================================
+// ADMINISTRATOR PORTAL (Protected)
+// ==========================================
+Route::middleware(['auth', 'portal.access', EnsureUserRole::class.':admin'])->group(function () {
 
-    // Username Wrong
-    if ($credentials['username'] !== 'admin') {
-        return back()->withErrors([
-            'username' => 'Invalid Username.',
-        ])->withInput($request->only('username'));
-    }
-
-    // Password Wrong
-    if ($credentials['password'] !== 'password123') {
-        return back()->withErrors([
-            'password' => 'The password you entered is incorrect.',
-        ])->withInput($request->only('username'));
-    }
-
-    $request->session()->regenerate();
-    $request->session()->put('portal_access', true);
-
-    return redirect()->route('dashboard')->with('success', 'Logged in successfully!');
-})->middleware('throttle:5,1')->name('portal.login.submit');
-
-// Portal logout route
-Route::post('/portal/logout', function (Request $request) {
-    $request->session()->forget('portal_access');
-    $request->session()->regenerate();
-
-    return redirect()->route('portal.login')->with('warning', 'You have been logged out.');
-})->name('portal.logout');
-
-// Protected student routes + Enroll/Grade route
-Route::middleware('portal.access')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Management Resources
+    Route::resource('programs', ProgramController::class)->except(['show']);
+    Route::post('/programs/{program}/archive', [ProgramController::class, 'archive'])->name('programs.archive');
+
+    Route::resource('courses', CourseController::class)->except(['show']);
+    Route::post('/courses/{course}/archive', [CourseController::class, 'archive'])->name('courses.archive');
+
     Route::resource('students', StudentController::class);
+    Route::post('/students/{student}/archive', [StudentController::class, 'archive'])->name('students.archive');
     Route::post('/students/{student}/enroll', [StudentController::class, 'enroll'])->name('students.enroll');
     Route::post('/students/{student}/courses/{course}/grade', [StudentController::class, 'updateGrade'])
         ->scopeBindings()
         ->name('students.courses.update-grade');
-});
 
-Route::get('/courses', [CourseController::class, 'index'])->name('courses.index');
+    // Admin Enrollment Applications Management
+    Route::get('/admin/enrollment-applications', [AdminEnrollmentApplicationController::class, 'index'])
+        ->name('admin.enrollment-applications.index');
+    Route::get('/admin/enrollment-applications/history', [AdminEnrollmentApplicationController::class, 'history'])
+        ->name('admin.enrollment-applications.history');
+    Route::get('/admin/enrollment-applications/{application}/edit', [AdminEnrollmentApplicationController::class, 'edit'])
+        ->name('admin.enrollment-applications.edit');
+    Route::get('/admin/enrollment-applications/{application}', [AdminEnrollmentApplicationController::class, 'show'])
+        ->name('admin.enrollment-applications.show');
+    Route::get('/admin/enrollment-applications/{application}/documents/{document}', [EnrollmentApplicationDocumentController::class, 'show'])
+        ->scopeBindings()
+        ->name('admin.enrollment-applications.documents.show');
+    Route::patch('/admin/enrollment-applications/{application}', [AdminEnrollmentApplicationController::class, 'update'])
+        ->name('admin.enrollment-applications.update');
+    Route::post('/admin/enrollment-applications/{application}/process', [AdminEnrollmentApplicationController::class, 'process'])
+        ->name('admin.enrollment-applications.process');
+    Route::post('/admin/enrollment-applications/{application}/resend-email', [AdminEnrollmentApplicationController::class, 'resend'])
+        ->name('admin.enrollment-applications.resend');
+
+    Route::get('/admin/enrollments', [AdminEnrollmentController::class, 'index'])->name('admin.enrollments.index');
+    Route::get('/admin/enrollments/{enrollment}', [AdminEnrollmentController::class, 'show'])->name('admin.enrollments.show');
+    Route::post('/admin/enrollments/{enrollment}', [AdminEnrollmentController::class, 'update'])->name('admin.enrollments.update');
+});

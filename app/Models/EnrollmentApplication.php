@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Database\Eloquent\Model;
 
 class EnrollmentApplication extends Model
 {
@@ -14,7 +14,7 @@ class EnrollmentApplication extends Model
         'application_number', 'first_name', 'middle_name', 'last_name', 'suffix',
         'birth_date', 'gender', 'civil_status', 'nationality', 'email',
         'contact_number', 'house_block_lot', 'street', 'barangay', 'city', 'province',
-        'department_id', 'program_id', 'student_type', 'year_level', 'school_year',
+        'program_id', 'applicant_user_id', 'student_type', 'year_level', 'school_year',
         'student_id', 'semester', 'status', 'rejection_reason', 'sample_username', 'sample_password',
         'submission_token',
         'submitted_at', 'approved_at', 'rejected_at', 'approved_by', 'rejected_by',
@@ -36,11 +36,6 @@ class EnrollmentApplication extends Model
         return 'application_number';
     }
 
-    public function department(): BelongsTo
-    {
-        return $this->belongsTo(Department::class);
-    }
-
     public function program(): BelongsTo
     {
         return $this->belongsTo(Program::class);
@@ -55,6 +50,16 @@ class EnrollmentApplication extends Model
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
+    }
+
+    public function applicantUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'applicant_user_id');
+    }
+
+    public function documents(): HasMany
+    {
+        return $this->hasMany(EnrollmentApplicationDocument::class);
     }
 
     public function enrollment(): HasOne

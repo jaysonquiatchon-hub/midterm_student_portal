@@ -92,6 +92,14 @@ class StudentController extends Controller
             ->with('success', 'Student deleted successfully.');
     }
 
+    public function archive(Student $student)
+    {
+        $student->update(['status' => 'archived']);
+
+        return redirect()->route('students.index')
+            ->with('success', 'Student archived successfully.');
+    }
+
     public function enroll(Request $request, Student $student)
     {
         $data = $request->validate([

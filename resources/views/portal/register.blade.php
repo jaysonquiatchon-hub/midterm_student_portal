@@ -1,79 +1,92 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="row justify-content-center mt-4">
-    <div class="col-md-8 col-lg-7">
-        <div class="card border-0 shadow-sm rounded-3">
-            <div class="card-body p-4">
-                <div class="text-center mb-4">
-                    <h3 class="fw-bold text-dark mb-1">Create Student Account</h3>
-                    <p class="text-muted small mb-0">Register your student information and sign-in details</p>
-                </div>
-                <form action="{{ route('portal.register.submit') }}" method="POST">
-                    @csrf
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label for="first_name" class="form-label fw-semibold">First Name</label>
-                            <input id="first_name" name="first_name" value="{{ old('first_name') }}" class="form-control @error('first_name') is-invalid @enderror" required maxlength="60" autocomplete="given-name">
-                            @error('first_name')<div class="invalid-feedback">{{ $message }}</div>@enderror
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-7 col-lg-6">
+            <div class="card border-0 shadow-sm rounded-3">
+                <div class="card-body p-4 p-md-5">
+                    <h1 class="h3 text-center fw-bold mb-1">Create Student Account</h1>
+                    <p class="text-center text-muted mb-4">Use the details from your approved enrollment notice.</p>
+
+                    @if ($errors->any())
+                        <div class="alert alert-danger" role="alert">
+                            <strong>Please review the following:</strong>
+                            <ul class="mb-0 mt-1">
+                                @foreach ($errors->all() as $message)
+                                    <li>{{ $message }}</li>
+                                @endforeach
+                            </ul>
                         </div>
-                        <div class="col-md-6">
-                            <label for="last_name" class="form-label fw-semibold">Last Name</label>
-                            <input id="last_name" name="last_name" value="{{ old('last_name') }}" class="form-control @error('last_name') is-invalid @enderror" required maxlength="60" autocomplete="family-name">
-                            @error('last_name')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                    @endif
+
+                    <form method="POST" action="{{ route('portal.register.submit') }}">
+                        @csrf
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label for="first_name" class="form-label fw-semibold">First name</label>
+                                <input type="text" class="form-control @error('first_name') is-invalid @enderror" id="first_name" name="first_name" value="{{ old('first_name') }}" autocomplete="given-name" placeholder="Your first name" required autofocus>
+                                @error('first_name')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            </div>
+                            <div class="col-md-6">
+                                <label for="last_name" class="form-label fw-semibold">Last name</label>
+                                <input type="text" class="form-control @error('last_name') is-invalid @enderror" id="last_name" name="last_name" value="{{ old('last_name') }}" autocomplete="family-name" placeholder="Your last name" required>
+                                @error('last_name')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            </div>
                         </div>
-                        <div class="col-md-6">
-                            <label for="student_number" class="form-label fw-semibold">Student Number</label>
-                            <input id="student_number" name="student_number" value="{{ old('student_number') }}" class="form-control @error('student_number') is-invalid @enderror" required maxlength="20">
+
+                        <div class="mb-3">
+                            <label for="student_number" class="form-label fw-semibold">Student number</label>
+                            <input type="text" class="form-control @error('student_number') is-invalid @enderror" id="student_number" name="student_number" value="{{ old('student_number') }}" autocomplete="username" placeholder="For example, 2026-00032" required>
+                            <div class="form-text">Your student number is included in your enrollment approval.</div>
                             @error('student_number')<div class="invalid-feedback">{{ $message }}</div>@enderror
                         </div>
-                        <div class="col-md-6">
-                            <label for="email" class="form-label fw-semibold">Email</label>
-                            <input id="email" type="email" name="email" value="{{ old('email') }}" class="form-control @error('email') is-invalid @enderror" required autocomplete="email">
+
+                        <div class="mb-3">
+                            <label for="email" class="form-label fw-semibold">Email address</label>
+                            <input type="email" class="form-control @error('email') is-invalid @enderror" id="email" name="email" value="{{ old('email') }}" autocomplete="email" placeholder="name@example.com" required>
                             @error('email')<div class="invalid-feedback">{{ $message }}</div>@enderror
                         </div>
-                        <div class="col-md-6">
-                            <label for="birth_date" class="form-label fw-semibold">Birth Date</label>
-                            <input id="birth_date" type="date" name="birth_date" value="{{ old('birth_date') }}" class="form-control @error('birth_date') is-invalid @enderror" required>
-                            @error('birth_date')<div class="invalid-feedback">{{ $message }}</div>@enderror
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label for="password" class="form-label fw-semibold">Password</label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control @error('password') is-invalid @enderror" id="password" name="password" autocomplete="new-password" placeholder="At least 8 characters" required>
+                                    <button class="btn btn-outline-secondary" type="button" data-password-toggle="password" aria-label="Show password" aria-pressed="false">
+                                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                </div>
+                                @error('password')<div class="d-block invalid-feedback">{{ $message }}</div>@enderror
+                            </div>
+                            <div class="col-md-6">
+                                <label for="password_confirmation" class="form-label fw-semibold">Confirm password</label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="password_confirmation" name="password_confirmation" autocomplete="new-password" placeholder="Re-enter your password" required>
+                                    <button class="btn btn-outline-secondary" type="button" data-password-toggle="password_confirmation" aria-label="Show confirmation password" aria-pressed="false">
+                                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="col-md-6">
-                            <label for="program_id" class="form-label fw-semibold">Program</label>
-                            <select id="program_id" name="program_id" class="form-select @error('program_id') is-invalid @enderror" required>
-                                <option value="">Select a program</option>
-                                @foreach($programs as $program)
-                                    <option value="{{ $program->id }}" @selected(old('program_id') == $program->id)>{{ $program->code }} - {{ $program->name }}</option>
-                                @endforeach
-                            </select>
-                            @error('program_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
-                        </div>
-                        <div class="col-md-6">
-                            <label for="year_level" class="form-label fw-semibold">Year Level</label>
-                            <select id="year_level" name="year_level" class="form-select @error('year_level') is-invalid @enderror" required>
-                                <option value="">Select year level</option>
-                                @foreach(range(1, 4) as $year)
-                                    <option value="{{ $year }}" @selected(old('year_level') == $year)>Year {{ $year }}</option>
-                                @endforeach
-                            </select>
-                            @error('year_level')<div class="invalid-feedback">{{ $message }}</div>@enderror
-                        </div>
-                        <div class="col-md-6">
-                            <label for="password" class="form-label fw-semibold">Password</label>
-                            <input id="password" type="password" name="password" class="form-control @error('password') is-invalid @enderror" required minlength="8" autocomplete="new-password">
-                            @error('password')<div class="invalid-feedback">{{ $message }}</div>@enderror
-                        </div>
-                        <div class="col-md-6">
-                            <label for="password_confirmation" class="form-label fw-semibold">Confirm Password</label>
-                            <input id="password_confirmation" type="password" name="password_confirmation" class="form-control" required minlength="8" autocomplete="new-password">
-                        </div>
-                    </div>
-                    <div class="d-grid mt-4">
-                        <button type="submit" class="btn btn-primary fw-semibold py-2">Create Account</button>
-                    </div>
-                </form>
-                <p class="text-center text-muted small mt-3 mb-0">Already registered? <a href="{{ route('portal.login') }}">Log in</a></p>
+
+                        <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">Create account</button>
+                    </form>
+                    <div class="text-center mt-3 small">Already registered? <a href="{{ route('student.login') }}">Student log in</a></div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+<script>
+    document.querySelectorAll('[data-password-toggle]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const input = document.getElementById(button.dataset.passwordToggle);
+            const visible = input.type === 'password';
+            input.type = visible ? 'text' : 'password';
+            button.setAttribute('aria-pressed', String(visible));
+            button.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+        });
+    });
+</script>
 @endsection

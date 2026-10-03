@@ -16,73 +16,67 @@ class StoreEnrollmentApplicationRequest extends FormRequest
     public function rules(): array
     {
         $submissionToken = $this->input('submission_token');
-        if (is_string($submissionToken) && EnrollmentApplication::query()->where('submission_token', $submissionToken)->exists()) {
-            return [
-                'submission_token' => ['required', 'uuid', Rule::exists('enrollment_applications', 'submission_token')],
-            ];
+        if (
+            is_string($submissionToken)
+            && $this->session()->get('enrollment_submission_token') === $submissionToken
+            && EnrollmentApplication::query()->where('submission_token', $submissionToken)->exists()
+        ) {
+            return ['submission_token' => ['required', 'string']];
         }
 
         $draft = $this->session()->get('enrollment_draft', []);
+        $studentType = $draft['student_type'] ?? '';
 
-        return [
+        $rules = [
+            'submission_token' => ['required', 'string'],
             'first_name' => ['required', 'string', 'max:60'],
             'middle_name' => ['nullable', 'string', 'max:60'],
             'last_name' => ['required', 'string', 'max:60'],
             'suffix' => ['nullable', 'string', 'max:20'],
-            'birth_date' => ['required', 'date', 'before:today'],
-            'gender' => ['required', Rule::in(['Female', 'Male', 'Non-binary', 'Prefer not to say'])],
-            'civil_status' => ['nullable', Rule::in(['Single', 'Married', 'Widowed', 'Separated', 'Divorced'])],
+            'birth_date' => ['required', 'date'],
+            'gender' => ['required', 'string'],
+            'civil_status' => ['nullable', 'string'],
             'nationality' => ['nullable', 'string', 'max:80'],
             'email' => ['required', 'email:rfc', 'max:255'],
-            'contact_number' => ['required', 'regex:/^[0-9+().\-\s]{7,30}$/'],
+            'contact_number' => ['required', 'string'],
             'house_block_lot' => ['nullable', 'string', 'max:120'],
             'street' => ['nullable', 'string', 'max:160'],
             'barangay' => ['required', 'string', 'max:120'],
             'city' => ['required', 'string', 'max:120'],
             'province' => ['required', 'string', 'max:120'],
-            'department_id' => ['required', 'integer', Rule::exists('departments', 'id')->where('status', 'active')],
-            'program_id' => [
-                'required',
-                'integer',
-                Rule::exists('programs', 'id')->where(fn ($query) => $query
-                    ->where('department_id', $this->input('department_id'))
-                    ->where('status', 'active')),
-            ],
-            'student_type' => ['required', Rule::in(['New Student', 'Transferee', 'Returning Student'])],
-            'year_level' => ['required', 'integer', 'between:1,4'],
-            'school_year' => ['required', 'regex:/^\d{4}-\d{4}$/'],
-            'semester' => ['required', Rule::in(['1st', '2nd', 'Summer'])],
-            'submission_token' => [
-                'required',
-                'uuid',
-                Rule::in([$this->session()->get('enrollment_submission_token')]),
-            ],
+            'program_id' => ['required', 'integer', 'exists:programs,id'],
+            'student_type' => ['required', 'string'],
+            'year_level' => ['required', 'integer'],
+            'school_year' => ['required', 'string'],
+            'semester' => ['required', 'string'],
             'selected_subject_ids' => ['required', 'array', 'min:1'],
             'selected_subject_ids.*' => [
                 'required',
                 'integer',
                 'distinct',
                 Rule::exists('courses', 'id')->where(fn ($query) => $query
-                    ->where('program_id', $this->input('program_id', $draft['program_id'] ?? null))
-                    ->where('year_level', $this->input('year_level', $draft['year_level'] ?? null))
-                    ->where('semester', $this->input('semester', $draft['semester'] ?? null))
+                    ->where('program_id', $draft['program_id'] ?? null)
+                    ->where('year_level', $draft['year_level'] ?? null)
+                    ->where('semester', $draft['semester'] ?? null)
                     ->where('status', 'active')),
             ],
         ];
+
+        foreach (config("enrollment.requirements.{$studentType}", []) as $key => $label) {
+            $rules["requirements.{$key}"] = ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:1020'];
+        }
+
+        return $rules;
     }
 
     protected function prepareForValidation(): void
     {
-        $this->merge($this->session()->get('enrollment_draft', []));
-        $normalized = [];
+        $draft = $this->session()->get('enrollment_draft', []);
+        $draft['submission_token'] = $this->input(
+            'submission_token',
+            $this->session()->get('enrollment_submission_token'),
+        );
 
-        foreach (['first_name', 'middle_name', 'last_name', 'suffix', 'nationality', 'email', 'contact_number', 'house_block_lot', 'street', 'barangay', 'city', 'province'] as $field) {
-            $value = $this->input($field);
-            if (is_string($value)) {
-                $normalized[$field] = trim(strip_tags($value));
-            }
-        }
-
-        $this->merge($normalized);
+        $this->merge($draft);
     }
 }

@@ -25,21 +25,28 @@
     <nav class="navbar navbar-dark bg-dark mb-4">
         <div class="container">
             <div class="d-flex align-items-center gap-4">
-                <a class="navbar-brand fw-semibold mb-0" href="{{ session('portal_access') ? route('dashboard') : route('courses.index') }}">Student Portal</a>
+                <a class="navbar-brand fw-semibold mb-0" href="{{ auth()->user()?->role === 'student' ? route('student.dashboard') : (session('portal_access') ? route('dashboard') : (request()->routeIs('admin.login') ? route('admin.login') : (request()->routeIs('student.login') ? route('student.login') : route('catalog.courses.index')))) }}">Student Portal</a>
                 <div class="d-flex align-items-center gap-3">
                     @if(session('portal_access'))
                         <a
-                            href="{{ route('dashboard') }}"
-                            @class(['portal-nav-link', 'active' => request()->routeIs('dashboard')])
-                            @if (request()->routeIs('dashboard')) aria-current="page" @endif
+                            href="{{ auth()->user()?->role === 'student' ? route('student.dashboard') : route('dashboard') }}"
+                            @class(['portal-nav-link', 'active' => request()->routeIs('dashboard', 'student.dashboard')])
+                            @if (request()->routeIs('dashboard', 'student.dashboard')) aria-current="page" @endif
                         >Dashboard</a>
                     @endif
+                    @unless(request()->routeIs('student.login', 'admin.login'))
+                        <a
+                            href="{{ auth()->user()?->role === 'admin' ? route('courses.index') : route('catalog.courses.index') }}"
+                            @class(['portal-nav-link', 'active' => request()->routeIs('courses.*', 'catalog.courses.index')])
+                            @if (request()->routeIs('courses.*', 'catalog.courses.index')) aria-current="page" @endif
+                        >Courses</a>
+                    @endunless
+                @if(session('portal_access') && auth()->user()?->role === 'admin')
                     <a
-                        href="{{ route('courses.index') }}"
-                        @class(['portal-nav-link', 'active' => request()->routeIs('courses.*')])
-                        @if (request()->routeIs('courses.*')) aria-current="page" @endif
-                    >Courses</a>
-                @if(session('portal_access'))
+                        href="{{ route('admin.enrollment-applications.index') }}"
+                        @class(['portal-nav-link', 'active' => request()->routeIs('admin.enrollment-applications.*')])
+                        @if (request()->routeIs('admin.enrollment-applications.*')) aria-current="page" @endif
+                    >Enrollment Applications</a>
                     <a
                         href="{{ route('students.index') }}"
                         @class(['portal-nav-link', 'active' => request()->routeIs('students.*')])

@@ -14,26 +14,41 @@ The application provides a public course catalog and a session-protected student
 ### Local setup
 
 1. Use PHP 8.4.1 or newer and install the Composer dependencies.
-2. Create a MySQL database and set `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` in `.env`.
-3. Run the database migrations:
+2. Configure the database in `.env`. The example environment uses SQLite; create its database file before migrating:
+
+   ```powershell
+   if (-not (Test-Path database\database.sqlite)) {
+       New-Item -ItemType File -Path database\database.sqlite
+   }
+   ```
+
+   Then run the migrations:
 
    ```bash
    php artisan migrate
    ```
 
-4. (Optional) Add 20 fictional students and any missing sample programs:
+   If you prefer MySQL, create a MySQL database and set `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` instead.
+
+3. (Optional) Add 20 fictional students and any missing sample programs:
 
    ```bash
    php artisan db:seed --class=StudentDemoSeeder
    ```
 
-5. Start the local web server:
+4. Start the local web server:
 
    ```bash
    php artisan serve
    ```
 
 After portal login, the dashboard summarizes students, active courses, programs, pending applications, student counts by program, and recently added students. The course catalog is available at `/courses`. Student management and grade updates require portal access.
+
+Students can create an account at `/portal/register`, log in immediately, and submit an enrollment application with the required documents for their student type. Common document requirements are configured in `config/enrollment.php`; uploaded PDF/JPG/PNG files are limited to 1 MB each, kept on the private local disk, and available to administrators from the application review page.
+
+The public five-step enrollment form lets applicants choose active courses for their selected program, year, and semester before uploading their requirements. Programs and their 1st- through 4th-year courses are seeded from the supplied BSIT, BSCS, BSBA, BSA, and BSED curricula. Course codes are unique within each program, so shared general-education codes can appear in multiple programs. Run `php artisan db:seed --class=ProgramSeeder` and `php artisan db:seed --class=CourseSeeder` to load or refresh the catalog. The catalog no longer uses departments; the department-removal migration drops the old department table and its program/application links.
+
+Email delivery is configured through `MAIL_*` values in `.env`. `MAIL_MAILER=log`, `MAIL_MAILER=array`, and Mailtrap's `sandbox.smtp.mailtrap.io` only log or capture test messages; they do not deliver to applicant inboxes. For real delivery, configure a live email provider's SMTP host, port, encryption, username, password/token, and verified sender address. After changing `.env`, run `php artisan config:clear` and use **Resend Email** on the approved application to retry a failed message.
 
 ## About Laravel
 

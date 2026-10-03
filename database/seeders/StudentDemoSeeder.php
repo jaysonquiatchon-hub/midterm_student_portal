@@ -19,9 +19,12 @@ class StudentDemoSeeder extends Seeder
         ];
 
         foreach ($programs as $code => $name) {
-            Program::firstOrCreate(
+            Program::updateOrCreate(
                 ['code' => $code],
-                ['name' => "{$code} — {$name}"],
+                [
+                    'name' => "{$code} — {$name}",
+                    'status' => 'active',
+                ],
             );
         }
 

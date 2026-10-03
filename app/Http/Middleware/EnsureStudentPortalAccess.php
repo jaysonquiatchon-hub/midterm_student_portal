@@ -10,11 +10,9 @@ class EnsureStudentPortalAccess
 {
     public function handle(Request $request, Closure $next): Response
     {
-        // Check if session flag is set
-        if (! $request->session()->get('portal_access')) {
-            // Intercept & redirect with flash warning message
+        if (! $request->session()->get('portal_access') && ! $request->user()) {
             return redirect()
-                ->route('portal.login')
+                ->route('student.login')
                 ->with('warning', 'Unauthorized access! Please enter your access credentials first.');
         }
 

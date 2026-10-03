@@ -12,7 +12,7 @@ class Course extends Model
     use HasFactory;
 
     protected $fillable = [
-        'department_id', 'code', 'title', 'units', 'year_level', 'program_id', 'semester', 'status',
+        'code', 'title', 'units', 'year_level', 'program_id', 'semester', 'status',
     ];
 
     public function program(): BelongsTo

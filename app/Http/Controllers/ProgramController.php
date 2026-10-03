@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Department;
 use App\Models\Program;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,13 +13,13 @@ class ProgramController extends Controller
     public function index(): View
     {
         return view('admin.programs.index', [
-            'programs' => Program::query()->with('department')->withCount('courses')->orderBy('name')->paginate(15),
+            'programs' => Program::query()->withCount('courses')->orderBy('name')->paginate(15),
         ]);
     }
 
     public function create(): View
     {
-        return view('admin.programs.create', ['departments' => Department::query()->where('status', 'active')->orderBy('name')->get()]);
+        return view('admin.programs.create');
     }
 
     public function store(Request $request): RedirectResponse
@@ -34,7 +33,6 @@ class ProgramController extends Controller
     {
         return view('admin.programs.edit', [
             'program' => $program,
-            'departments' => Department::query()->orderBy('name')->get(),
         ]);
     }
 
@@ -57,7 +55,6 @@ class ProgramController extends Controller
         return $request->validate([
             'code' => ['required', 'string', 'max:10', Rule::unique('programs', 'code')->ignore($program)],
             'name' => ['required', 'string', 'max:255'],
-            'department_id' => ['required', 'exists:departments,id'],
         ]);
     }
 }

@@ -1,25 +1,30 @@
-<x-mail::message>
-# Enrollment Confirmation
+@component('mail::message')
+# Enrollment Application Approved
 
-Hello {{ $application->full_name }},
+Hello {{ $application->first_name }},
 
-Your enrollment application has been successfully approved.
+Your enrollment application (**{{ $application->application_number }}**) has been approved.
 
-**Student ID:** {{ $application->student?->student_id }}  
-**Name:** {{ $application->full_name }}  
-**Department:** {{ $application->department->name }}  
-**Course:** {{ $application->program->name }}  
-**Year Level:** {{ $application->year_level }}  
-**Semester:** {{ $application->semester }}  
-**School Year:** {{ $application->school_year }}
+- **Student number:** {{ $application->student->student_id }}
+- **Program:** {{ $application->program }}
+- **Year Level:** {{ $application->year_level }}
+- **Semester:** {{ $application->semester }}
+- **School Year:** {{ $application->school_year }}
 
-## SAMPLE / TEST ACCOUNT
+@if ($application->applicant_user_id)
+You can sign in to the Student Portal using the email address and password already associated with your account.
 
-**Username:** {{ $application->sample_username }}  
-**Password:** {{ $application->sample_password }}
+@component('mail::button', ['url' => route('student.login')])
+Student Login
+@endcomponent
+@else
+Create your student account using the same first name, last name, email address, and student number listed in this approval. You will choose your own password during registration.
 
-Important: These credentials are provided for testing and demonstration purposes only. The Student Portal login is not currently enabled for this sample account.
+@component('mail::button', ['url' => route('portal.register')])
+Create Student Account
+@endcomponent
+@endif
 
 Thank you,<br>
 {{ config('app.name') }}
-</x-mail::message>
+@endcomponent

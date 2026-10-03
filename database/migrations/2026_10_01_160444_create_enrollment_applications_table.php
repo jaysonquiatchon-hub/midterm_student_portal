@@ -29,7 +29,6 @@ return new class extends Migration
             $table->string('barangay', 120);
             $table->string('city', 120);
             $table->string('province', 120);
-            $table->foreignId('department_id')->constrained()->restrictOnDelete();
             $table->foreignId('program_id')->constrained()->restrictOnDelete();
             $table->foreignId('student_id')->nullable()->constrained()->nullOnDelete();
             $table->string('student_type', 25);

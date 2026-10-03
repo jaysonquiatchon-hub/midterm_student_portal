@@ -3,7 +3,7 @@
 @section('content')
 @php
     $stepNames = [1 => 'Personal', 2 => 'Contact', 3 => 'Academic', 4 => 'Subjects', 5 => 'Review'];
-    $selectedSubjectIds = array_map('intval', old('selected_subject_ids', $draft['selected_subject_ids'] ?? $subjects->pluck('id')->all()));
+    $selectedSubjectIds = array_map('strval', (array) old('selected_subject_ids', $draft['selected_subject_ids'] ?? []));
 @endphp
 
 <div class="mx-auto" style="max-width: 960px;">
@@ -65,105 +65,188 @@
                         </div>
                     @elseif($step === 3)
                         <h2 class="h4 fw-bold mb-1">Academic Information</h2>
-                        <p class="text-muted mb-4">Programs are filtered by the department you choose.</p>
+                        <p class="text-muted mb-4">Select your program and academic details.</p>
                         <div class="row g-3">
-                            <div class="col-md-6"><label for="department_id" class="form-label">Department *</label><select id="department_id" name="department_id" class="form-select @error('department_id') is-invalid @enderror" required><option value="">Select department</option>@foreach($departments as $department)<option value="{{ $department->id }}" @selected((string) old('department_id', $draft['department_id'] ?? '') === (string) $department->id)>{{ $department->name }}</option>@endforeach</select>@error('department_id')<div class="invalid-feedback">{{ $message }}</div>@enderror</div>
-                            <div class="col-md-6"><label for="program_id" class="form-label">Course / Program *</label><select id="program_id" name="program_id" class="form-select @error('program_id') is-invalid @enderror" required><option value="">Select course / program</option>@foreach($programs as $program)<option value="{{ $program->id }}" data-department-id="{{ $program->department_id }}" @selected((string) old('program_id', $draft['program_id'] ?? '') === (string) $program->id)>{{ $program->name }}</option>@endforeach</select>@error('program_id')<div class="invalid-feedback">{{ $message }}</div>@enderror</div>
+                            <div class="col-md-12 mb-3">
+                                <label for="program_id" class="form-label">Course / Program *</label>
+                                <select name="program_id" id="program_id" class="form-select" required>
+                                    <option value="">Select course / program</option>
+                                    @foreach($programs as $program)
+                                        <option value="{{ $program->id }}" @selected((string) old('program_id', $draft['program_id'] ?? '') === (string) $program->id)>
+                                            {{ $program->code }} — {{ $program->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
                             <div class="col-md-6"><label for="student_type" class="form-label">Student Type *</label><select id="student_type" name="student_type" class="form-select" required><option value="">Select student type</option>@foreach(['New Student', 'Transferee', 'Returning Student'] as $type)<option value="{{ $type }}" @selected(old('student_type', $draft['student_type'] ?? '') === $type)>{{ $type }}</option>@endforeach</select></div>
                             <div class="col-md-6"><label for="year_level" class="form-label">Year Level *</label><select id="year_level" name="year_level" class="form-select" required><option value="">Select year</option>@foreach(range(1, 4) as $year)<option value="{{ $year }}" @selected((string) old('year_level', $draft['year_level'] ?? '') === (string) $year)>Year {{ $year }}</option>@endforeach</select></div>
                             <div class="col-md-6"><label for="school_year" class="form-label">School Year *</label><input id="school_year" name="school_year" value="{{ old('school_year', $draft['school_year'] ?? (now()->year.'-'.(now()->year + 1))) }}" pattern="[0-9]{4}-[0-9]{4}" class="form-control" required></div>
                             <div class="col-md-6"><label for="semester" class="form-label">Semester *</label><select id="semester" name="semester" class="form-select" required><option value="">Select semester</option>@foreach(['1st' => '1st Semester', '2nd' => '2nd Semester', 'Summer' => 'Summer'] as $value => $label)<option value="{{ $value }}" @selected(old('semester', $draft['semester'] ?? '') === $value)>{{ $label }}</option>@endforeach</select></div>
                         </div>
                     @elseif($step === 4)
-                        <h2 class="h4 fw-bold mb-1">Subject Selection</h2>
-                        <p class="text-muted mb-3">Subjects shown match your selected program, year level, and semester. Curriculum subjects are selected by default.</p>
+                        <h2 class="h4 fw-bold mb-1">Select Subjects</h2>
+                        <p class="text-muted mb-4">Choose subjects available for your program, year level, and semester.</p>
                         @if($subjects->isEmpty())
-                            <div class="alert alert-warning">No active subjects are assigned to this program, year level, and semester. Please go back and choose another semester or contact the school.</div>
+                            <div class="alert alert-warning mb-0">No active subjects are available for this selection. <a href="{{ route('enrollment.create', ['step' => 3]) }}">Change your academic information</a>.</div>
                         @else
-                            <div class="list-group mb-3" id="subject-list">
+                            <div class="row g-3">
                                 @foreach($subjects as $subject)
-                                    <label class="list-group-item d-flex align-items-center gap-3">
-                                        <input class="form-check-input subject-choice" type="checkbox" name="selected_subject_ids[]" value="{{ $subject->id }}" data-units="{{ $subject->units }}" @checked(in_array($subject->id, $selectedSubjectIds, true))>
-                                        <span class="flex-grow-1"><span class="font-monospace fw-semibold">{{ $subject->code }}</span> - {{ $subject->title }}</span>
-                                        <span class="text-muted text-nowrap">{{ $subject->units }} units</span>
-                                    </label>
+                                    <div class="col-md-6">
+                                        <div class="form-check border rounded p-3 h-100">
+                                            <input id="subject-{{ $subject->id }}" class="form-check-input" type="checkbox" name="selected_subject_ids[]" value="{{ $subject->id }}" @checked(in_array((string) $subject->id, $selectedSubjectIds, true))>
+                                            <label class="form-check-label ms-2" for="subject-{{ $subject->id }}">
+                                                <span class="font-monospace fw-semibold">{{ $subject->code }}</span> — {{ $subject->title }}
+                                                <span class="d-block small text-muted">{{ $subject->units }} units</span>
+                                            </label>
+                                        </div>
+                                    </div>
                                 @endforeach
                             </div>
-                            @error('selected_subject_ids')<div class="text-danger small mb-2">{{ $message }}</div>@enderror
-                            @error('selected_subject_ids.*')<div class="text-danger small mb-2">{{ $message }}</div>@enderror
-                            <div class="d-flex gap-4 fw-semibold"><span>Total Subjects: <span id="subject-count">0</span></span><span>Total Units: <span id="unit-count">0</span></span></div>
                         @endif
                     @endif
 
                     <div class="d-flex flex-wrap justify-content-between gap-2 mt-4 pt-3 border-top">
                         <div class="d-flex gap-2">
                             @if($step > 1)<a class="btn btn-outline-secondary" href="{{ route('enrollment.create', ['step' => $step - 1]) }}">Back</a>@endif
-                            <button class="btn btn-primary" type="submit" @if($step === 4 && $subjects->isEmpty()) disabled @endif>Next</button>
+                            <button class="btn btn-primary" type="submit">Next</button>
                         </div>
                         <button type="submit" formaction="{{ route('enrollment.cancel') }}" formmethod="POST" formnovalidate class="btn btn-link text-danger text-decoration-none">Cancel</button>
                     </div>
                 </form>
             @else
-                <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
-                    <div><h2 class="h4 fw-bold mb-1">Review Your Application</h2><p class="text-muted mb-0">Check your information. You can go back and edit before submitting.</p></div>
-                    <a href="{{ route('enrollment.create', ['step' => 1]) }}" class="btn btn-outline-primary btn-sm">Edit Information</a>
-                </div>
-                <div class="row g-3">
-                    <section class="col-md-6"><div class="border rounded p-3 h-100"><h3 class="h6 fw-bold">Personal Information</h3><dl class="row mb-0 small"><dt class="col-5">Name</dt><dd class="col-7">{{ trim(implode(' ', array_filter([$draft['first_name'] ?? '', $draft['middle_name'] ?? '', $draft['last_name'] ?? '', $draft['suffix'] ?? '']))) }}</dd><dt class="col-5">Birth Date</dt><dd class="col-7">{{ $draft['birth_date'] ?? '' }}</dd><dt class="col-5">Gender</dt><dd class="col-7">{{ $draft['gender'] ?? '' }}</dd><dt class="col-5">Civil Status</dt><dd class="col-7">{{ $draft['civil_status'] ?? 'Not provided' }}</dd><dt class="col-5">Nationality</dt><dd class="col-7">{{ $draft['nationality'] ?? 'Not provided' }}</dd></dl></div></section>
-                    <section class="col-md-6"><div class="border rounded p-3 h-100"><h3 class="h6 fw-bold">Contact Information</h3><dl class="row mb-0 small"><dt class="col-5">Email</dt><dd class="col-7">{{ $draft['email'] ?? '' }}</dd><dt class="col-5">Contact</dt><dd class="col-7">{{ $draft['contact_number'] ?? '' }}</dd><dt class="col-5">Address</dt><dd class="col-7">{{ implode(', ', array_filter([$draft['house_block_lot'] ?? '', $draft['street'] ?? '', $draft['barangay'] ?? '', $draft['city'] ?? '', $draft['province'] ?? ''])) }}</dd></dl></div></section>
-                    <section class="col-md-6"><div class="border rounded p-3 h-100"><h3 class="h6 fw-bold">Academic Information</h3><dl class="row mb-0 small"><dt class="col-5">Department</dt><dd class="col-7">{{ $departments->firstWhere('id', (int) ($draft['department_id'] ?? 0))?->name }}</dd><dt class="col-5">Course</dt><dd class="col-7">{{ $programs->firstWhere('id', (int) ($draft['program_id'] ?? 0))?->name }}</dd><dt class="col-5">Student Type</dt><dd class="col-7">{{ $draft['student_type'] ?? '' }}</dd><dt class="col-5">Year Level</dt><dd class="col-7">Year {{ $draft['year_level'] ?? '' }}</dd><dt class="col-5">School Year</dt><dd class="col-7">{{ $draft['school_year'] ?? '' }}</dd><dt class="col-5">Semester</dt><dd class="col-7">{{ $draft['semester'] ?? '' }}</dd></dl></div></section>
-                    <section class="col-md-6"><div class="border rounded p-3 h-100"><h3 class="h6 fw-bold">Subjects</h3><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Code</th><th>Subject</th><th>Units</th></tr></thead><tbody>@forelse($subjects as $subject)<tr><td class="font-monospace">{{ $subject->code }}</td><td>{{ $subject->title }}</td><td>{{ $subject->units }}</td></tr>@empty<tr><td colspan="3" class="text-muted">No subjects selected.</td></tr>@endforelse</tbody></table></div><div class="small fw-semibold mt-2">{{ $subjects->count() }} subjects · {{ $subjects->sum('units') }} units</div></div></section>
-                </div>
-                <div class="alert alert-info mt-4 mb-0">Your application will be marked Pending. You will only become officially enrolled after administrator approval.</div>
-                <div class="d-flex flex-wrap justify-content-between gap-2 mt-4 pt-3 border-top">
-                    <div class="d-flex gap-2"><a href="{{ route('enrollment.create', ['step' => 4]) }}" class="btn btn-outline-secondary">Back</a><button type="button" class="btn btn-success fw-semibold" data-bs-toggle="modal" data-bs-target="#submit-confirmation">Submit Enrollment</button></div>
-                    <form action="{{ route('enrollment.cancel') }}" method="POST">@csrf<button type="submit" class="btn btn-link text-danger text-decoration-none">Cancel</button></form>
-                </div>
-                <div class="modal fade" id="submit-confirmation" tabindex="-1" aria-labelledby="submit-confirmation-label" aria-hidden="true">
-                    <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="submit-confirmation-label">Confirm Enrollment Submission</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body">Are you sure you want to submit your enrollment? Please make sure all information is correct.</div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><form id="submit-application-form" action="{{ route('enrollment.submit') }}" method="POST">@csrf<input type="hidden" name="submission_token" value="{{ session('enrollment_submission_token') }}"><button id="confirm-submit-button" class="btn btn-success" type="submit">Yes, Submit</button></form></div></div></div>
-                </div>
+                <form id="submit-application-form" action="{{ route('enrollment.submit') }}" method="POST" enctype="multipart/form-data">
+                    @csrf
+                    <input type="hidden" name="submission_token" value="{{ session('enrollment_submission_token') }}">
+
+                    <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
+                        <div>
+                            <h2 class="h4 fw-bold mb-1">Review Your Application</h2>
+                            <p class="text-muted mb-0">Check your information and upload requirements before submitting.</p>
+                        </div>
+                        <a href="{{ route('enrollment.create', ['step' => 1]) }}" class="btn btn-outline-primary btn-sm">Edit Information</a>
+                    </div>
+
+                    <div class="row g-3">
+                        <section class="col-md-4">
+                            <div class="border rounded p-3 h-100">
+                                <h3 class="h6 fw-bold">Personal Information</h3>
+                                <dl class="row mb-0 small">
+                                    <dt class="col-5">Name</dt>
+                                    <dd class="col-7">{{ trim(implode(' ', array_filter([$draft['first_name'] ?? '', $draft['middle_name'] ?? '', $draft['last_name'] ?? '', $draft['suffix'] ?? '']))) }}</dd>
+                                    <dt class="col-5">Birth Date</dt>
+                                    <dd class="col-7">{{ $draft['birth_date'] ?? '' }}</dd>
+                                    <dt class="col-5">Gender</dt>
+                                    <dd class="col-7">{{ $draft['gender'] ?? '' }}</dd>
+                                    <dt class="col-5">Civil Status</dt>
+                                    <dd class="col-7">{{ $draft['civil_status'] ?? 'Not provided' }}</dd>
+                                    <dt class="col-5">Nationality</dt>
+                                    <dd class="col-7">{{ $draft['nationality'] ?? 'Not provided' }}</dd>
+                                </dl>
+                            </div>
+                        </section>
+
+                        <section class="col-md-4">
+                            <div class="border rounded p-3 h-100">
+                                <h3 class="h6 fw-bold">Contact Information</h3>
+                                <dl class="row mb-0 small">
+                                    <dt class="col-5">Email</dt>
+                                    <dd class="col-7">{{ $draft['email'] ?? '' }}</dd>
+                                    <dt class="col-5">Contact</dt>
+                                    <dd class="col-7">{{ $draft['contact_number'] ?? '' }}</dd>
+                                    <dt class="col-5">Address</dt>
+                                    <dd class="col-7">{{ implode(', ', array_filter([$draft['house_block_lot'] ?? '', $draft['street'] ?? '', $draft['barangay'] ?? '', $draft['city'] ?? '', $draft['province'] ?? ''])) }}</dd>
+                                </dl>
+                            </div>
+                        </section>
+
+                        <section class="col-md-4">
+                            <div class="border rounded p-3 h-100">
+                                <h3 class="h6 fw-bold">Academic Information</h3>
+                                <dl class="row mb-0 small">
+                                    <dt class="col-5">Course</dt>
+                                    <dd class="col-7">{{ $programs->firstWhere('id', (int) ($draft['program_id'] ?? 0))?->name }}</dd>
+                                    <dt class="col-5">Student Type</dt>
+                                    <dd class="col-7">{{ $draft['student_type'] ?? '' }}</dd>
+                                    <dt class="col-5">Year Level</dt>
+                                    <dd class="col-7">Year {{ $draft['year_level'] ?? '' }}</dd>
+                                    <dt class="col-5">School Year</dt>
+                                    <dd class="col-7">{{ $draft['school_year'] ?? '' }}</dd>
+                                    <dt class="col-5">Semester</dt>
+                                    <dd class="col-7">{{ $draft['semester'] ?? '' }}</dd>
+                                </dl>
+                            </div>
+                        </section>
+                    </div>
+
+                    <section class="mt-4">
+                        <h3 class="h5 fw-bold">Selected Subjects</h3>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead><tr><th>Code</th><th>Subject</th><th>Units</th></tr></thead>
+                                <tbody>
+                                    @foreach($subjects as $subject)
+                                        <tr>
+                                            <td class="font-monospace">{{ $subject->code }}</td>
+                                            <td>{{ $subject->title }}</td>
+                                            <td>{{ $subject->units }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                                <tfoot><tr><th colspan="2">{{ $subjects->count() }} subjects</th><th>{{ $subjects->sum('units') }} units</th></tr></tfoot>
+                            </table>
+                        </div>
+                    </section>
+
+                    @if($documentRequirements)
+                        <section class="mt-4">
+                            <h3 class="h5 fw-bold">Required Documents</h3>
+                            <p class="small text-muted">Upload a PDF, JPG, or PNG for each requirement. Maximum 1 MB per file.</p>
+                            <div class="row g-3">
+                                @foreach($documentRequirements as $key => $label)
+                                    <div class="col-md-6">
+                                        <label for="requirement-{{ $key }}" class="form-label">{{ $label }} *</label>
+                                        <input id="requirement-{{ $key }}" type="file" name="requirements[{{ $key }}]" accept=".pdf,.jpg,.jpeg,.png" required class="form-control @error('requirements.'.$key) is-invalid @enderror">
+                                        @error('requirements.'.$key)<div class="invalid-feedback">{{ $message }}</div>@enderror
+                                    </div>
+                                @endforeach
+                            </div>
+                        </section>
+                    @endif
+
+                    <div class="alert alert-info mt-4 mb-0">Your application will be marked Pending. You will only become officially enrolled after administrator approval.</div>
+
+                    <div class="d-flex flex-wrap justify-content-between gap-2 mt-4 pt-3 border-top">
+                        <div class="d-flex gap-2">
+                            <a href="{{ route('enrollment.create', ['step' => 3]) }}" class="btn btn-outline-secondary">Back</a>
+                            <button id="confirm-submit-button" class="btn btn-success fw-semibold" type="submit">Submit Enrollment</button>
+                        </div>
+                        <button type="submit" formaction="{{ route('enrollment.cancel') }}" formmethod="POST" formnovalidate class="btn btn-link text-danger text-decoration-none">Cancel</button>
+                    </div>
+                </form>
             @endif
         </div>
     </div>
 </div>
 
-@if($step === 3)
-<script>
-    const departmentSelect = document.getElementById('department_id');
-    const programSelect = document.getElementById('program_id');
-    const filterPrograms = () => {
-        const selectedDepartment = departmentSelect.value;
-        for (const option of programSelect.options) {
-            if (!option.value) continue;
-            option.hidden = option.dataset.departmentId !== selectedDepartment;
-            option.disabled = option.hidden;
-            if (option.disabled && option.selected) programSelect.value = '';
-        }
-    };
-    departmentSelect.addEventListener('change', filterPrograms);
-    filterPrograms();
-</script>
-@endif
-
-@if($step === 4)
-<script>
-    const updateSubjectTotals = () => {
-        const selectedSubjects = [...document.querySelectorAll('.subject-choice:checked')];
-        document.getElementById('subject-count').textContent = selectedSubjects.length;
-        document.getElementById('unit-count').textContent = selectedSubjects.reduce((total, subject) => total + Number(subject.dataset.units), 0);
-    };
-    document.querySelectorAll('.subject-choice').forEach((subject) => subject.addEventListener('change', updateSubjectTotals));
-    updateSubjectTotals();
-</script>
-@endif
-
 @if($step === 5)
 <script>
-    document.getElementById('submit-application-form').addEventListener('submit', () => {
-        const button = document.getElementById('confirm-submit-button');
-        button.disabled = true;
-        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Submitting...';
-    });
+   document.getElementById('submit-application-form').addEventListener('submit', (e) => {
+    const fileInputs = document.querySelectorAll('input[type="file"]');
+    const MAX_SIZE_BYTES = 1020 * 1024;
+
+    for (const input of fileInputs) {
+        if (input.files[0] && input.files[0].size > MAX_SIZE_BYTES) {
+            alert(`The file "${input.files[0].name}" exceeds the maximum allowed size of 1 MB.`);
+            e.preventDefault();
+            return;
+        }
+    }
+
+    const button = document.getElementById('confirm-submit-button');
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Submitting...';
+});
 </script>
+
 @endif
 @endsection

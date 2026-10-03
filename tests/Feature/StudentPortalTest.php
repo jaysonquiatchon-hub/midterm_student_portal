@@ -3,11 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\Course;
-use App\Models\Department;
+use App\Models\Enrollment;
 use App\Models\EnrollmentApplication;
 use App\Models\Program;
 use App\Models\Student;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class StudentPortalTest extends TestCase
@@ -16,21 +19,64 @@ class StudentPortalTest extends TestCase
 
     public function test_portal_login_and_logout_set_and_clear_session_access(): void
     {
-        $this->post(route('portal.login.submit'), [
+        User::factory()->create([
+            'email' => config('student_portal.admin_email'),
+            'password' => 'password123',
+            'role' => 'admin',
+        ]);
+
+        $this->get(route('student.login'))
+            ->assertOk()
+            ->assertSee('Student Login')
+            ->assertSee('action="'.route('student.login.submit').'"', false)
+            ->assertDontSee('Administrator login')
+            ->assertSee('Create student account')
+            ->assertDontSee('>Courses</a>', false)
+            ->assertDontSee('Demo Credentials')
+            ->assertDontSee('password123');
+
+        $this->get(route('admin.login'))
+            ->assertOk()
+            ->assertSee('Administrator Login')
+            ->assertSee('action="'.route('admin.login.submit').'"', false)
+            ->assertDontSee('Student login')
+            ->assertDontSee('>Courses</a>', false)
+            ->assertDontSee('Create student account');
+
+        $student = User::factory()->create(['role' => 'student', 'password' => 'student-password']);
+        $this->post(route('admin.login.submit'), [
+            'username' => $student->email,
+            'password' => 'student-password',
+        ])
+            ->assertRedirect(route('admin.login'))
+            ->assertSessionHasErrors('username');
+        $this->assertGuest();
+
+        $this->from(route('student.login'))->post(route('student.login.submit'), [
             'username' => 'admin',
             'password' => 'password123',
         ])
-            ->assertRedirect(route('dashboard'))
+            ->assertRedirect(route('student.login'))
+            ->assertSessionHasErrors('username');
+        $this->assertGuest();
+
+        $this->post(route('admin.login.submit'), [
+            'username' => 'admin',
+            'password' => 'password123',
+        ])
+            ->assertRedirect(route('students.index'))
             ->assertSessionHas('portal_access', true);
 
         $this->post(route('portal.logout'))
-            ->assertRedirect(route('portal.login'))
+            ->assertRedirect(route('admin.login'))
             ->assertSessionMissing('portal_access');
     }
 
     public function test_navigation_places_course_and_student_links_next_to_the_portal_title(): void
     {
+        $admin = User::factory()->create(['role' => 'admin']);
         $this->withSession(['portal_access' => true])
+            ->actingAs($admin)
             ->get(route('courses.index'))
             ->assertSeeInOrder([
                 'Student Portal</a>',
@@ -39,24 +85,36 @@ class StudentPortalTest extends TestCase
                 'class="portal-nav-link active"',
                 '>Courses</a>',
                 'class="portal-nav-link"',
+                '>Enrollment Applications</a>',
+                'class="portal-nav-link"',
                 '>Students</a>',
                 '>Logout</button>',
             ], false);
 
         $this->withSession(['portal_access' => true])
+            ->actingAs($admin)
             ->get(route('students.index'))
             ->assertSeeInOrder([
                 'class="portal-nav-link"',
                 '>Courses</a>',
+                '>Enrollment Applications</a>',
                 'class="portal-nav-link active"',
                 '>Students</a>',
             ], false);
+
+        $student = User::factory()->create(['role' => 'student']);
+        $this->withSession(['portal_access' => true])
+            ->actingAs($student)
+            ->get(route('catalog.courses.index'))
+            ->assertSee('href="'.route('catalog.courses.index').'"', false)
+            ->assertDontSee('Enrollment Applications')
+            ->assertDontSee('Student Directory');
     }
 
     public function test_guest_is_redirected_from_dashboard_to_portal_login(): void
     {
         $this->get(route('dashboard'))
-            ->assertRedirect(route('portal.login'));
+            ->assertRedirect(route('student.login'));
     }
 
     public function test_dashboard_displays_student_course_program_and_pending_application_totals(): void
@@ -66,8 +124,6 @@ class StudentPortalTest extends TestCase
         $student = $this->createStudent($program);
         $this->createCourse($program, 'IT101');
         $this->createCourse($otherProgram, 'CS101', ['status' => 'archived']);
-        $department = Department::create(['code' => 'CIT', 'name' => 'College of Information Technology']);
-
         foreach (['pending', 'under_review'] as $status) {
             EnrollmentApplication::create([
                 'application_number' => 'APP-'.strtoupper($status),
@@ -80,7 +136,6 @@ class StudentPortalTest extends TestCase
                 'barangay' => 'Sample Barangay',
                 'city' => 'Sample City',
                 'province' => 'Sample Province',
-                'department_id' => $department->id,
                 'program_id' => $program->id,
                 'student_type' => 'new',
                 'year_level' => 1,
@@ -90,7 +145,8 @@ class StudentPortalTest extends TestCase
             ]);
         }
 
-        $this->withSession(['portal_access' => true]);
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->withSession(['portal_access' => true])->actingAs($admin);
 
         $this->get(route('dashboard'))
             ->assertOk()
@@ -110,6 +166,124 @@ class StudentPortalTest extends TestCase
             ->assertViewHas('recentStudents', fn ($students): bool => $students->contains('id', $student->id));
     }
 
+    public function test_student_can_update_personal_information_and_linked_login_details(): void
+    {
+        $program = $this->createProgram('BSIT');
+        $user = User::factory()->create([
+            'name' => 'Taylor Student',
+            'email' => 'taylor@example.test',
+            'role' => 'student',
+        ]);
+        $student = $this->createStudent($program);
+        $student->update(['user_id' => $user->id, 'email' => $user->email]);
+
+        $this->withSession(['portal_access' => true])
+            ->actingAs($user)
+            ->get(route('student.profile.edit'))
+            ->assertOk()
+            ->assertSee('Edit Profile')
+            ->assertSee('Profile photo');
+
+        $this->put(route('student.profile.update'), [
+            'first_name' => 'Taylor',
+            'middle_name' => 'Rae',
+            'last_name' => 'Student',
+            'suffix' => 'Jr.',
+            'birth_date' => '2005-04-10',
+            'gender' => 'Female',
+            'civil_status' => 'Single',
+            'nationality' => 'Filipino',
+            'email' => 'Taylor.Updated@example.test',
+            'contact_number' => '09171234567',
+            'address' => '12 School Street',
+        ])->assertRedirect(route('student.profile.edit'));
+
+        $this->assertDatabaseHas('students', [
+            'id' => $student->id,
+            'middle_name' => 'Rae',
+            'gender' => 'Female',
+            'civil_status' => 'Single',
+            'nationality' => 'Filipino',
+            'email' => 'taylor.updated@example.test',
+            'contact_number' => '09171234567',
+            'address' => '12 School Street',
+        ]);
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'name' => 'Taylor Rae Student Jr.',
+            'email' => 'taylor.updated@example.test',
+        ]);
+    }
+
+    public function test_student_profile_photo_is_private_and_rejects_non_images(): void
+    {
+        Storage::fake('local');
+        $program = $this->createProgram('BSIT');
+        $user = User::factory()->create(['role' => 'student']);
+        $student = $this->createStudent($program);
+        $student->update(['user_id' => $user->id]);
+
+        $this->withSession(['portal_access' => true])
+            ->actingAs($user)
+            ->post(route('student.profile.photo.update'), [
+                'profile_photo' => UploadedFile::fake()->createWithContent(
+                    'profile.png',
+                    base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'),
+                ),
+            ])
+            ->assertRedirect(route('student.profile.edit'));
+
+        $photoPath = $student->fresh()->profile_photo_path;
+        $this->assertNotNull($photoPath);
+        Storage::disk('local')->assertExists($photoPath);
+        $this->get(route('student.profile.photo'))->assertOk();
+
+        $otherUser = User::factory()->create(['role' => 'student']);
+        $otherStudent = $this->createStudent($program);
+        $otherStudent->update(['user_id' => $otherUser->id]);
+
+        $this->actingAs($otherUser)
+            ->withSession(['portal_access' => true])
+            ->get(route('student.profile.photo'))
+            ->assertNotFound();
+
+        $this->actingAs($user)
+            ->withSession(['portal_access' => true])
+            ->post(route('student.profile.photo.update'), [
+                'profile_photo' => UploadedFile::fake()->create('profile.txt', 10, 'text/plain'),
+            ])
+            ->assertSessionHasErrors('profile_photo');
+
+        $this->assertSame($photoPath, $student->fresh()->profile_photo_path);
+        Storage::disk('local')->assertExists($photoPath);
+    }
+
+    public function test_student_dashboard_displays_enrolled_courses_and_posted_grades(): void
+    {
+        $program = $this->createProgram('BSIT');
+        $user = User::factory()->create(['role' => 'student']);
+        $student = $this->createStudent($program);
+        $student->update(['user_id' => $user->id]);
+        $course = $this->createCourse($program, 'IT101');
+        $enrollment = Enrollment::create([
+            'reference_number' => 'ENR-2026-000001',
+            'student_id' => $student->id,
+            'program_id' => $program->id,
+            'academic_year' => '2026-2027',
+            'term' => '1st',
+            'status' => 'enrolled',
+        ]);
+        $enrollment->courses()->attach($course->id);
+        $student->courses()->attach($course->id, ['enrollment_id' => $enrollment->id, 'grade' => '1.25']);
+
+        $this->withSession(['portal_access' => true])
+            ->actingAs($user)
+            ->get(route('student.dashboard'))
+            ->assertOk()
+            ->assertSee('IT101')
+            ->assertSee('1.25');
+    }
+
     public function test_guest_cannot_update_a_student_grade(): void
     {
         $program = $this->createProgram('BSIT');
@@ -119,7 +293,7 @@ class StudentPortalTest extends TestCase
 
         $this->post(route('students.courses.update-grade', [$student, $course]), [
             'grade' => '1.25',
-        ])->assertRedirect(route('portal.login'));
+        ])->assertRedirect(route('student.login'));
 
         $this->assertDatabaseHas('course_student', [
             'student_id' => $student->id,
@@ -134,7 +308,7 @@ class StudentPortalTest extends TestCase
         $activeCourse = $this->createCourse($program, 'IT101');
         $archivedCourse = $this->createCourse($program, 'IT102', ['status' => 'archived']);
 
-        $this->get(route('courses.index'))
+        $this->get(route('catalog.courses.index'))
             ->assertOk()
             ->assertSee($activeCourse->title)
             ->assertDontSee($archivedCourse->title);
@@ -143,7 +317,8 @@ class StudentPortalTest extends TestCase
     public function test_portal_user_can_create_update_and_delete_a_student(): void
     {
         $program = $this->createProgram('BSIT');
-        $this->withSession(['portal_access' => true]);
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->withSession(['portal_access' => true])->actingAs($admin);
 
         $this->post(route('students.store'), [
             'student_number' => 'STU-2026-001',
@@ -183,7 +358,8 @@ class StudentPortalTest extends TestCase
     {
         $program = $this->createProgram('BSIT');
         $student = $this->createStudent($program);
-        $this->withSession(['portal_access' => true]);
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->withSession(['portal_access' => true])->actingAs($admin);
 
         $this->get(route('students.index'))
             ->assertOk()
@@ -197,7 +373,9 @@ class StudentPortalTest extends TestCase
 
     public function test_success_flash_message_renders_as_a_bottom_right_toast_that_hides_after_two_seconds(): void
     {
-        $this->withSession(['success' => 'Student updated successfully.'])
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->withSession(['portal_access' => true, 'success' => 'Student updated successfully.'])
+            ->actingAs($admin)
             ->get(route('courses.index'))
             ->assertSee('id="success-toast"', false)
             ->assertSee('class="toast-container position-fixed bottom-0 end-0 p-3"', false)
@@ -215,7 +393,8 @@ class StudentPortalTest extends TestCase
         $availableCourse = $this->createCourse($program, 'IT102');
         $archivedCourse = $this->createCourse($program, 'IT103', ['status' => 'archived']);
         $otherProgramCourse = $this->createCourse($otherProgram, 'CS101');
-        $this->withSession(['portal_access' => true]);
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->withSession(['portal_access' => true])->actingAs($admin);
 
         $this->from(route('students.show', $student))
             ->post(route('students.enroll', $student), ['course_id' => $otherProgramCourse->id])
@@ -260,7 +439,8 @@ class StudentPortalTest extends TestCase
         $enrolledCourse = $this->createCourse($program, 'IT101');
         $otherCourse = $this->createCourse($program, 'IT102');
         $student->courses()->attach($enrolledCourse->id);
-        $this->withSession(['portal_access' => true]);
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->withSession(['portal_access' => true])->actingAs($admin);
 
         $this->from(route('students.show', $student))
             ->post(route('students.courses.update-grade', [$student, $enrolledCourse]), [
@@ -287,7 +467,8 @@ class StudentPortalTest extends TestCase
     {
         $program = $this->createProgram('BSIT');
         $student = $this->createStudent($program);
-        $this->withSession(['portal_access' => true]);
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->withSession(['portal_access' => true])->actingAs($admin);
 
         $this->from(route('students.create'))
             ->post(route('students.store'), [

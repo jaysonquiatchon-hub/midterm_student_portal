@@ -14,6 +14,8 @@ class EnrollmentStepRequest extends FormRequest
 
     public function rules(): array
     {
+        $draft = $this->session()->get('enrollment_draft', []);
+
         return match ((int) $this->route('step')) {
             1 => [
                 'first_name' => ['required', 'string', 'max:60'],
@@ -35,13 +37,10 @@ class EnrollmentStepRequest extends FormRequest
                 'province' => ['required', 'string', 'max:120'],
             ],
             3 => [
-                'department_id' => ['required', 'integer', Rule::exists('departments', 'id')->where('status', 'active')],
                 'program_id' => [
                     'required',
                     'integer',
-                    Rule::exists('programs', 'id')->where(fn ($query) => $query
-                        ->where('department_id', $this->input('department_id'))
-                        ->where('status', 'active')),
+                    Rule::exists('programs', 'id')->where(fn ($query) => $query->where('status', 'active')),
                 ],
                 'student_type' => ['required', Rule::in(['New Student', 'Transferee', 'Returning Student'])],
                 'year_level' => ['required', 'integer', 'between:1,4'],
@@ -55,9 +54,9 @@ class EnrollmentStepRequest extends FormRequest
                     'integer',
                     'distinct',
                     Rule::exists('courses', 'id')->where(fn ($query) => $query
-                        ->where('program_id', $this->session()->get('enrollment_draft.program_id'))
-                        ->where('year_level', $this->session()->get('enrollment_draft.year_level'))
-                        ->where('semester', $this->session()->get('enrollment_draft.semester'))
+                        ->where('program_id', $draft['program_id'] ?? null)
+                        ->where('year_level', $draft['year_level'] ?? null)
+                        ->where('semester', $draft['semester'] ?? null)
                         ->where('status', 'active')),
                 ],
             ],

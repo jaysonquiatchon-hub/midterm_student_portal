@@ -5,12 +5,16 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ProcessEnrollmentApplicationRequest;
 use App\Http\Requests\UpdateEnrollmentApplicationRequest;
 use App\Mail\EnrollmentApplicationApproved;
+use App\Mail\EnrollmentApplicationRejected;
+use App\Models\Course;
 use App\Models\EmailHistory;
 use App\Models\Enrollment;
 use App\Models\EnrollmentApplication;
+use App\Models\Program;
 use App\Models\Student;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -22,17 +26,13 @@ class AdminEnrollmentApplicationController extends Controller
 {
     public function index(Request $request, bool $history = false): View
     {
-        $query = EnrollmentApplication::query()->with(['department', 'program', 'student'])->latest('submitted_at');
+        $query = EnrollmentApplication::query()->with(['program', 'student'])->latest('submitted_at');
         $status = $request->query('status', $history ? null : 'pending');
-        $departmentId = $request->integer('department_id') ?: null;
         $programId = $request->integer('program_id') ?: null;
         $search = trim((string) $request->query('search', ''));
 
         if ($status && in_array($status, ['pending', 'under_review', 'approved', 'rejected'], true)) {
             $query->where('status', $status);
-        }
-        if ($departmentId) {
-            $query->where('department_id', $departmentId);
         }
         if ($programId) {
             $query->where('program_id', $programId);
@@ -48,10 +48,8 @@ class AdminEnrollmentApplicationController extends Controller
 
         return view('admin.enrollment-applications.index', [
             'applications' => $query->paginate(15)->withQueryString(),
-            'departments' => \App\Models\Department::query()->orderBy('name')->get(),
-            'programs' => \App\Models\Program::query()->orderBy('name')->get(),
+            'programs' => Program::query()->orderBy('name')->get(),
             'status' => $status,
-            'departmentId' => $departmentId,
             'programId' => $programId,
             'search' => $search,
             'history' => $history,
@@ -66,7 +64,7 @@ class AdminEnrollmentApplicationController extends Controller
     public function show(EnrollmentApplication $application): View
     {
         $application->load([
-            'department', 'program', 'subjects', 'student', 'enrollment',
+            'program', 'subjects', 'student', 'applicantUser', 'documents', 'enrollment',
             'approver', 'rejector', 'emailHistories' => fn ($query) => $query->latest(),
         ]);
 
@@ -76,13 +74,12 @@ class AdminEnrollmentApplicationController extends Controller
     public function edit(EnrollmentApplication $application): View
     {
         abort_unless($application->status === 'pending', 403);
-        $application->load(['department', 'program', 'subjects']);
+        $application->load(['program', 'subjects']);
 
         return view('admin.enrollment-applications.edit', [
             'application' => $application,
-            'departments' => \App\Models\Department::query()->where('status', 'active')->orderBy('name')->get(),
-            'programs' => \App\Models\Program::query()->where('status', 'active')->orderBy('name')->get(),
-            'subjects' => \App\Models\Course::query()
+            'programs' => Program::query()->where('status', 'active')->orderBy('name')->get(),
+            'subjects' => Course::query()
                 ->where('program_id', $application->program_id)
                 ->where('year_level', $application->year_level)
                 ->where('semester', $application->semester)
@@ -94,6 +91,15 @@ class AdminEnrollmentApplicationController extends Controller
     public function update(UpdateEnrollmentApplicationRequest $request, EnrollmentApplication $application): RedirectResponse
     {
         $data = $request->validated();
+        if (
+            $application->applicant_user_id
+            && mb_strtolower($data['email']) !== mb_strtolower($application->applicantUser()->value('email'))
+        ) {
+            throw ValidationException::withMessages([
+                'email' => 'The email address must remain the one associated with the applicant account.',
+            ]);
+        }
+
         $subjectIds = array_values(array_unique(array_map('intval', $data['selected_subject_ids'])));
         unset($data['selected_subject_ids']);
 
@@ -137,8 +143,25 @@ class AdminEnrollmentApplicationController extends Controller
                 'rejected_at' => now(),
             ]);
 
-            return redirect()->route('admin.enrollment-applications.show', $application)
+            $rejectedApplication = $application->fresh();
+            $history = $this->sendEnrollmentEmail(
+                $rejectedApplication,
+                new EnrollmentApplicationRejected($rejectedApplication),
+                'Enrollment Application Update',
+                'Enrollment Application Requires Changes',
+            );
+            $redirect = redirect()->route('admin.enrollment-applications.show', $rejectedApplication)
                 ->with('success', 'Application rejected. No student or enrollment record was created.');
+
+            if ($history->status !== 'sent') {
+                return $redirect->with('warning', $history->status === 'logged'
+                    ? 'The application was rejected, but the message was written to the log mailer and not delivered to an inbox.'
+                    : ($history->status === 'captured'
+                        ? 'The application was rejected, but the test mailer captured the message instead of delivering it.'
+                        : 'The application was rejected, but the notification email failed. Check email history and mail settings.'));
+            }
+
+            return $redirect;
         }
 
         $approvedApplication = DB::transaction(function () use ($application, $request): EnrollmentApplication {
@@ -165,10 +188,14 @@ class AdminEnrollmentApplicationController extends Controller
                 ]);
             }
 
-            $studentId = $student?->student_id;
             if (! $student) {
+                // Calculate next auto-increment ID to generate the real unique student ID/number before creation
+                $nextAutoId = (DB::table('students')->max('id') ?? 0) + 1;
+                $computedStudentId = sprintf('%s-%05d', now()->format('Y'), $nextAutoId);
+
                 $student = Student::create([
-                    'student_number' => 'APP-'.$lockedApplication->id,
+                    'student_id' => $computedStudentId,
+                    'student_number' => $computedStudentId,
                     'first_name' => $lockedApplication->first_name,
                     'middle_name' => $lockedApplication->middle_name,
                     'last_name' => $lockedApplication->last_name,
@@ -183,27 +210,31 @@ class AdminEnrollmentApplicationController extends Controller
                     'contact_number' => $lockedApplication->contact_number,
                     'status' => 'active',
                 ]);
+            } else {
+                $studentId = $student->student_id ?? sprintf('%s-%05d', now()->format('Y'), $student->id);
+
+                $student->update([
+                    'student_id' => $studentId,
+                    'student_number' => $studentId,
+                    'first_name' => $lockedApplication->first_name,
+                    'middle_name' => $lockedApplication->middle_name,
+                    'last_name' => $lockedApplication->last_name,
+                    'suffix' => $lockedApplication->suffix,
+                    'program_id' => $lockedApplication->program_id,
+                    'year_level' => $lockedApplication->year_level,
+                    'gender' => $lockedApplication->gender,
+                    'civil_status' => $lockedApplication->civil_status,
+                    'nationality' => $lockedApplication->nationality,
+                    'contact_number' => $lockedApplication->contact_number,
+                    'status' => 'active',
+                ]);
             }
 
-            $studentId ??= sprintf('%s-%05d', now()->format('Y'), $student->id);
-            if (Student::query()->where('student_id', $studentId)->whereKeyNot($student->id)->exists()) {
-                throw ValidationException::withMessages(['action' => 'Could not generate a unique Student ID. Please retry.']);
-            }
+            $studentId = $student->student_id;
 
-            $student->update([
-                'student_id' => $studentId,
-                'student_number' => $studentId,
-                'first_name' => $lockedApplication->first_name,
-                'middle_name' => $lockedApplication->middle_name,
-                'last_name' => $lockedApplication->last_name,
-                'suffix' => $lockedApplication->suffix,
-                'program_id' => $lockedApplication->program_id,
-                'year_level' => $lockedApplication->year_level,
-                'gender' => $lockedApplication->gender,
-                'civil_status' => $lockedApplication->civil_status,
-                'nationality' => $lockedApplication->nationality,
-                'contact_number' => $lockedApplication->contact_number,
-                'status' => 'active',
+            $student->user?->update([
+                'name' => $lockedApplication->full_name,
+                'email' => $student->email,
             ]);
 
             $enrollment = Enrollment::create([
@@ -216,6 +247,7 @@ class AdminEnrollmentApplicationController extends Controller
                 'status' => 'enrolled',
                 'processed_at' => now(),
             ]);
+
             $enrollment->courses()->sync($lockedApplication->subjects()->pluck('courses.id')->all());
             $student->courses()->syncWithoutDetaching(
                 $lockedApplication->subjects->mapWithKeys(fn ($subject): array => [
@@ -226,23 +258,30 @@ class AdminEnrollmentApplicationController extends Controller
             $lockedApplication->update([
                 'student_id' => $student->id,
                 'status' => 'approved',
-                'sample_username' => $studentId,
-                'sample_password' => config('student_portal.enrollment_demo_password', 'Student@123'),
+                'sample_username' => null,
+                'sample_password' => null,
                 'approved_by' => $request->user()->id,
                 'approved_at' => now(),
             ]);
 
-            return $lockedApplication->fresh(['student', 'department', 'program', 'enrollment']);
+            return $lockedApplication->fresh(['student', 'program', 'enrollment']);
         });
 
-        $history = $this->sendApprovalEmail($approvedApplication);
+        $history = $this->sendEnrollmentEmail(
+            $approvedApplication,
+            new EnrollmentApplicationApproved($approvedApplication),
+            'Enrollment Confirmation',
+            'Enrollment Confirmation',
+        );
         $redirect = redirect()->route('admin.enrollment-applications.show', $approvedApplication)
             ->with('success', 'Application approved and student enrollment created.');
 
         if ($history->status !== 'sent') {
             $message = $history->status === 'logged'
                 ? 'The message was written to the configured log mailer, not delivered to an inbox.'
-                : 'The application is approved, but the confirmation email failed. Use Resend Email after checking mail settings.';
+                : ($history->status === 'captured'
+                    ? 'The email was captured by the configured test mailer, not delivered to the applicant. Configure a live sending mail service to deliver it.'
+                    : 'The application is approved, but email delivery failed. Check the mail host, port, encryption, and provider credentials before resending.');
 
             return $redirect->with('warning', $message);
         }
@@ -252,34 +291,69 @@ class AdminEnrollmentApplicationController extends Controller
 
     public function resend(EnrollmentApplication $application): RedirectResponse
     {
-        abort_unless($application->status === 'approved' && $application->student, 422);
-        $history = $this->sendApprovalEmail($application->fresh(['student', 'department', 'program', 'enrollment']));
+        if ($application->status === 'approved' && $application->student) {
+            $freshApplication = $application->fresh(['student', 'program', 'enrollment']);
+            $history = $this->sendEnrollmentEmail(
+                $freshApplication,
+                new EnrollmentApplicationApproved($freshApplication),
+                'Enrollment Confirmation',
+                'Enrollment Confirmation',
+            );
+            $sentMessage = 'Confirmation email sent.';
+        } elseif ($application->status === 'rejected') {
+            $freshApplication = $application->fresh();
+            $history = $this->sendEnrollmentEmail(
+                $freshApplication,
+                new EnrollmentApplicationRejected($freshApplication),
+                'Enrollment Application Update',
+                'Enrollment Application Requires Changes',
+            );
+            $sentMessage = 'Rejection notification email sent.';
+        } else {
+            abort(422);
+        }
 
         return redirect()->route('admin.enrollment-applications.show', $application)
-            ->with($history->status === 'sent' ? 'success' : 'warning', $history->status === 'sent'
-                ? 'Confirmation email sent.'
-                : ($history->status === 'logged' ? 'Message written to log; it was not delivered to an inbox.' : 'Email delivery failed again. Check the email history for details.'));
+            ->with(
+                $history->status === 'sent' ? 'success' : 'warning',
+                match ($history->status) {
+                    'sent' => $sentMessage,
+                    'logged' => 'Message written to log; it was not delivered to an inbox.',
+                    'captured' => 'The email was captured by the configured test mailer, not delivered to the applicant.',
+                    default => 'Email delivery failed. Check the mail settings and email history before trying again.',
+                },
+            );
     }
 
-    private function sendApprovalEmail(EnrollmentApplication $application): EmailHistory
-    {
-        $subject = 'Enrollment Confirmation';
+    private function sendEnrollmentEmail(
+        EnrollmentApplication $application,
+        Mailable $mailable,
+        string $type,
+        string $subject,
+    ): EmailHistory {
         $status = 'failed';
         $errorMessage = null;
         $sentAt = null;
 
         try {
-            Mail::to($application->email)->send(new EnrollmentApplicationApproved($application));
-            if (config('mail.default') === 'log') {
+            Mail::to($application->email)->send($mailable);
+            $mailer = config('mail.default');
+            $transport = config("mail.mailers.{$mailer}.transport");
+            $host = strtolower((string) config("mail.mailers.{$mailer}.host"));
+
+            if ($transport === 'log') {
                 $status = 'logged';
                 $errorMessage = 'Configured log mailer does not deliver email to an inbox.';
+            } elseif ($transport === 'array' || $host === 'sandbox.smtp.mailtrap.io') {
+                $status = 'captured';
+                $errorMessage = 'Configured test mailer captures messages but does not deliver them to the recipient.';
             } else {
                 $status = 'sent';
                 $sentAt = now();
             }
         } catch (Throwable $exception) {
-            $errorMessage = $exception->getMessage();
-            Log::error('Enrollment application confirmation email failed.', [
+            $errorMessage = 'Mail transport failed. Check the configured SMTP host, port, encryption, and provider credentials.';
+            Log::error('Enrollment application email failed.', [
                 'application_id' => $application->id,
                 'recipient' => $application->email,
                 'exception' => $exception,
@@ -290,7 +364,7 @@ class AdminEnrollmentApplicationController extends Controller
             'student_id' => $application->student_id,
             'enrollment_id' => $application->enrollment?->id,
             'recipient' => $application->email,
-            'type' => 'Enrollment Confirmation',
+            'type' => $type,
             'subject' => $subject,
             'status' => $status,
             'error_message' => $errorMessage,

@@ -12,7 +12,11 @@
                     <dl class="row mb-0"><dt class="col-sm-5">Application Number</dt><dd class="col-sm-7 fw-semibold">{{ $application->application_number }}</dd><dt class="col-sm-5">Status</dt><dd class="col-sm-7"><span class="badge text-bg-secondary">Pending Review</span></dd><dt class="col-sm-5">Submitted</dt><dd class="col-sm-7">{{ $application->submitted_at?->format('F j, Y g:i A') }}</dd></dl>
                 </div>
                 <p class="mb-4">The administrator will review your enrollment application. Keep your application number for reference.</p>
-                <a href="{{ route('enrollment.create') }}" class="btn btn-primary">Start Another Application</a>
+                @if(auth()->user()?->role === 'student')
+                    <a href="{{ route('student.dashboard') }}" class="btn btn-primary">Return to Student Portal</a>
+                @else
+                    <a href="{{ route('portal.register') }}" class="btn btn-primary">Create Student Account</a>
+                @endauth
             </div>
         </div>
     </div>

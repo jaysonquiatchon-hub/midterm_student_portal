@@ -39,10 +39,7 @@ class UpdateEnrollmentApplicationRequest extends FormRequest
             'barangay' => ['required', 'string', 'max:120'],
             'city' => ['required', 'string', 'max:120'],
             'province' => ['required', 'string', 'max:120'],
-            'department_id' => ['required', 'integer', Rule::exists('departments', 'id')->where('status', 'active')],
-            'program_id' => ['required', 'integer', Rule::exists('programs', 'id')->where(fn ($query) => $query
-                ->where('department_id', $this->input('department_id'))
-                ->where('status', 'active'))],
+            'program_id' => ['required', 'integer', Rule::exists('programs', 'id')->where('status', 'active')],
             'student_type' => ['required', Rule::in(['New Student', 'Transferee', 'Returning Student'])],
             'year_level' => ['required', 'integer', 'between:1,4'],
             'school_year' => ['required', 'regex:/^\d{4}-\d{4}$/'],

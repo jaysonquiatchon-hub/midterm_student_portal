@@ -3,21 +3,25 @@
 namespace Tests\Feature;
 
 use App\Mail\EnrollmentApplicationApproved;
+use App\Mail\EnrollmentApplicationRejected;
 use App\Models\Course;
-use App\Models\Department;
-use App\Models\EmailHistory;
 use App\Models\Enrollment;
 use App\Models\EnrollmentApplication;
 use App\Models\Program;
 use App\Models\Student;
 use App\Models\User;
 use Database\Seeders\CourseSeeder;
-use Database\Seeders\DepartmentSeeder;
+use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\ProgramSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Mail\Mailer;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Mockery;
 use RuntimeException;
 use Tests\TestCase;
@@ -28,7 +32,7 @@ class EnrollmentApplicationFlowTest extends TestCase
 
     public function test_public_enrollment_page_shows_the_five_step_form_without_login(): void
     {
-        $this->get('/portal/login')->assertOk()->assertSee('Start an application');
+        $this->get('/student/login')->assertOk()->assertSee('Start an application');
         $this->get('/enrollment')
             ->assertOk()
             ->assertSee('Personal')
@@ -40,32 +44,50 @@ class EnrollmentApplicationFlowTest extends TestCase
         $this->assertGuest();
     }
 
-    public function test_catalog_seeders_map_programs_to_departments_and_supply_active_subjects(): void
+    public function test_catalog_seeders_assign_all_supplied_courses_to_their_programs(): void
     {
-        $this->seed([DepartmentSeeder::class, ProgramSeeder::class, CourseSeeder::class]);
+        $this->seed([ProgramSeeder::class, CourseSeeder::class]);
+
+        $expectedCourseCounts = ['BSIT' => 50, 'BSCS' => 49, 'BSBA' => 50, 'BSA' => 50, 'BSED' => 54];
+        foreach ($expectedCourseCounts as $code => $count) {
+            $program = Program::where('code', $code)->firstOrFail();
+            $this->assertSame('active', $program->status);
+            $this->assertSame($count, $program->courses()->where('status', 'active')->count());
+        }
 
         $program = Program::where('code', 'BSIT')->firstOrFail();
-        $this->assertSame('CIT', $program->department->code);
-        $this->assertSame('active', $program->status);
-
-        $subject = Course::where('code', 'IT101')->firstOrFail();
+        $subject = Course::whereBelongsTo($program)->where('code', 'IT101')->firstOrFail();
+        $this->assertSame('Introduction to Computing', $subject->title);
         $this->assertSame('1st', $subject->semester);
         $this->assertSame('active', $subject->status);
+        $this->assertSame(5, Course::where('code', 'GE101')->count());
+        $this->assertDatabaseHas('courses', [
+            'program_id' => Program::where('code', 'BSA')->value('id'),
+            'code' => 'AC406',
+            'title' => 'Accounting Practicum',
+            'semester' => '2nd',
+            'units' => 6,
+        ]);
     }
 
-    public function test_admin_can_create_update_and_archive_departments_programs_and_subjects(): void
+    public function test_default_database_seeder_populates_program_scoped_courses_for_students(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $this->assertSame(5, Program::count());
+        $this->assertSame(253, Course::count());
+        $this->assertSame(51, Student::count());
+        $this->assertGreaterThan(0, DB::table('course_student')->count());
+    }
+
+    public function test_admin_can_create_update_and_archive_programs_and_subjects(): void
     {
         $admin = User::factory()->create(['role' => 'admin']);
         $this->actingAs($admin);
 
-        $this->post('/departments', ['code' => 'CIT', 'name' => 'College of Information Technology'])
-            ->assertRedirect('/departments');
-        $department = Department::where('code', 'CIT')->firstOrFail();
-
         $this->post('/programs', [
             'code' => 'BSIT',
             'name' => 'BS Information Technology',
-            'department_id' => $department->id,
         ])->assertRedirect('/programs');
         $program = Program::where('code', 'BSIT')->firstOrFail();
 
@@ -89,20 +111,46 @@ class EnrollmentApplicationFlowTest extends TestCase
         ])->assertRedirect('/courses');
         $this->post('/courses/'.$subject->id.'/archive')->assertRedirect('/courses');
         $this->post('/programs/'.$program->id.'/archive')->assertRedirect('/programs');
-        $this->post('/departments/'.$department->id.'/archive')->assertRedirect('/departments');
 
         $this->assertDatabaseHas('courses', ['id' => $subject->id, 'status' => 'archived']);
         $this->assertDatabaseHas('programs', ['id' => $program->id, 'status' => 'archived']);
-        $this->assertDatabaseHas('departments', ['id' => $department->id, 'status' => 'archived']);
     }
 
-    public function test_admin_catalog_management_pages_render_for_departments_programs_and_subjects(): void
+    public function test_course_codes_can_repeat_between_programs_but_not_within_one_program(): void
     {
-        $department = Department::create(['code' => 'CIT', 'name' => 'College of Information Technology']);
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($admin);
+        $bsit = Program::create(['code' => 'BSIT', 'name' => 'Information Technology']);
+        $bscs = Program::create(['code' => 'BSCS', 'name' => 'Computer Science']);
+
+        foreach ([$bsit, $bscs] as $program) {
+            $this->post('/courses', [
+                'code' => 'GE101',
+                'title' => 'Understanding the Self',
+                'units' => 3,
+                'year_level' => 1,
+                'semester' => '1st',
+                'program_id' => $program->id,
+            ])->assertRedirect('/courses');
+        }
+
+        $this->post('/courses', [
+            'code' => 'GE101',
+            'title' => 'Duplicate within program',
+            'units' => 3,
+            'year_level' => 1,
+            'semester' => '1st',
+            'program_id' => $bsit->id,
+        ])->assertSessionHasErrors('code');
+
+        $this->assertDatabaseCount('courses', 2);
+    }
+
+    public function test_admin_catalog_management_pages_render_without_department_pages(): void
+    {
         $program = Program::create([
             'code' => 'BSIT',
             'name' => 'BS Information Technology',
-            'department_id' => $department->id,
         ]);
         $subject = Course::create([
             'code' => 'IT101',
@@ -114,9 +162,7 @@ class EnrollmentApplicationFlowTest extends TestCase
         ]);
         $this->actingAs(User::factory()->create(['role' => 'admin']));
 
-        $this->get('/departments')->assertOk()->assertSee('CIT');
-        $this->get('/departments/create')->assertOk();
-        $this->get('/departments/'.$department->id.'/edit')->assertOk();
+        $this->get('/departments')->assertNotFound();
         $this->get('/programs')->assertOk()->assertSee('BS Information Technology');
         $this->get('/programs/create')->assertOk();
         $this->get('/programs/'.$program->id.'/edit')->assertOk();
@@ -146,7 +192,7 @@ class EnrollmentApplicationFlowTest extends TestCase
         $this->post('/students/'.$student->id.'/archive')->assertRedirect('/students');
         $this->assertDatabaseHas('students', ['id' => $student->id, 'status' => 'archived']);
 
-        $this->post('/portal/login', [
+        $this->post('/student/login', [
             'username' => $studentUser->email,
             'password' => 'portal-password',
         ])->assertSessionHasErrors('username');
@@ -154,21 +200,29 @@ class EnrollmentApplicationFlowTest extends TestCase
 
     public function test_complete_public_submission_creates_only_a_pending_application(): void
     {
-        [$department, $program, $subject] = $this->makeCatalog();
-        $this->submitStepsOneToThree($department, $program);
+        Storage::fake('local');
+        [$program, $subject] = $this->makeCatalog();
+        $this->submitStepsOneToThree($program);
 
         $this->get('/enrollment?step=4')->assertOk()->assertSee($subject->code);
         $this->post('/enrollment/step/4', ['selected_subject_ids' => [$subject->id]])
             ->assertRedirect('/enrollment?step=5');
 
         $submissionToken = $this->app['session.store']->get('enrollment_submission_token');
-        $response = $this->post('/enrollment/submit', ['submission_token' => $submissionToken])->assertRedirect();
+        $this->post('/enrollment/submit', [
+            'submission_token' => $submissionToken,
+            ...$this->requirementUploads(),
+        ])->assertRedirect();
         $application = EnrollmentApplication::firstOrFail();
 
         $this->assertMatchesRegularExpression('/^ENR-\d{4}-\d{5}$/', $application->application_number);
         $this->assertSame('pending', $application->status);
         $this->assertSame('APPLICANT@example.test', $application->email);
         $this->assertSame([$subject->id], $application->subjects()->pluck('courses.id')->all());
+        $this->assertCount(4, $application->documents);
+        foreach ($application->documents as $document) {
+            Storage::disk('local')->assertExists($document->file_path);
+        }
         $this->assertSame(0, Student::count());
         $this->assertSame(0, Enrollment::count());
         $this->assertDatabaseHas('enrollment_applications', [
@@ -183,16 +237,40 @@ class EnrollmentApplicationFlowTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_application_submission_succeeds_without_departments(): void
+    {
+        Storage::fake('local');
+        [$program, $subject] = $this->makeCatalog();
+        $this->submitStepsOneToThree($program);
+
+        $this->get('/enrollment?step=4');
+        $this->post('/enrollment/step/4', ['selected_subject_ids' => [$subject->id]]);
+        $submissionToken = $this->app['session.store']->get('enrollment_submission_token');
+
+        $this->post('/enrollment/submit', [
+            'submission_token' => $submissionToken,
+            ...$this->requirementUploads(),
+        ])->assertRedirect();
+
+        $application = EnrollmentApplication::firstOrFail();
+        $this->assertSame($program->id, $application->program_id);
+        $this->assertFalse(Schema::hasTable('departments'));
+    }
+
     public function test_a_submission_token_prevents_duplicate_applications_for_the_same_double_submit(): void
     {
-        [$department, $program, $subject] = $this->makeCatalog();
-        $this->submitStepsOneToThree($department, $program);
+        Storage::fake('local');
+        [$program, $subject] = $this->makeCatalog();
+        $this->submitStepsOneToThree($program);
         $this->get('/enrollment?step=4');
         $this->post('/enrollment/step/4', ['selected_subject_ids' => [$subject->id]]);
         $submissionToken = $this->app['session.store']->get('enrollment_submission_token');
 
         $this->assertIsString($submissionToken);
-        $this->post('/enrollment/submit', ['submission_token' => $submissionToken])->assertRedirect()->assertSessionHasNoErrors();
+        $this->post('/enrollment/submit', [
+            'submission_token' => $submissionToken,
+            ...$this->requirementUploads(),
+        ])->assertRedirect()->assertSessionHasNoErrors();
         $application = EnrollmentApplication::firstOrFail();
         $this->post('/enrollment/submit', ['submission_token' => $submissionToken])
             ->assertRedirect(route('enrollment.success', $application));
@@ -201,13 +279,112 @@ class EnrollmentApplicationFlowTest extends TestCase
         $this->assertDatabaseHas('enrollment_applications', ['submission_token' => $submissionToken]);
     }
 
+    public function test_application_submission_requires_every_configured_document(): void
+    {
+        Storage::fake('local');
+        [$program, $subject] = $this->makeCatalog();
+        $this->submitStepsOneToThree($program);
+        $this->get('/enrollment?step=4');
+        $this->post('/enrollment/step/4', ['selected_subject_ids' => [$subject->id]]);
+        $submissionToken = $this->app['session.store']->get('enrollment_submission_token');
+
+        $this->post('/enrollment/submit', ['submission_token' => $submissionToken])
+            ->assertSessionHasErrors([
+                'requirements.birth_certificate',
+                'requirements.senior_high_record',
+                'requirements.good_moral',
+                'requirements.id_photo',
+            ]);
+
+        $uploads = $this->requirementUploads();
+        $uploads['requirements']['birth_certificate'] = UploadedFile::fake()->create(
+            'not-a-document.exe',
+            100,
+            'application/octet-stream',
+        );
+        $this->post('/enrollment/submit', [
+            'submission_token' => $submissionToken,
+            ...$uploads,
+        ])->assertSessionHasErrors('requirements.birth_certificate');
+
+        $this->assertDatabaseCount('enrollment_applications', 0);
+    }
+
+    public function test_student_can_apply_with_uploaded_requirements_and_keep_account_access_after_approval(): void
+    {
+        Storage::fake('local');
+        [$program, $subject] = $this->makeCatalog();
+        $this->submitStepsOneToThree($program);
+        $this->get('/enrollment?step=4');
+        $this->post('/enrollment/step/4', ['selected_subject_ids' => [$subject->id]]);
+        $submissionToken = $this->app['session.store']->get('enrollment_submission_token');
+        $this->post('/enrollment/submit', [
+            'submission_token' => $submissionToken,
+            ...$this->requirementUploads(),
+        ])->assertRedirect();
+
+        $application = EnrollmentApplication::firstOrFail();
+        $this->assertNull($application->applicant_user_id);
+        $this->assertNull($application->student_id);
+        $this->assertSame($program->id, $application->program_id);
+        $this->from('/portal/register')->post('/portal/register', [
+            'first_name' => 'Juan',
+            'last_name' => 'Cruz',
+            'student_number' => '2026-00001',
+            'email' => 'applicant@example.test',
+            'password' => 'secure-password',
+            'password_confirmation' => 'secure-password',
+        ])->assertSessionHasErrors('student_number');
+        $this->assertDatabaseCount('users', 0);
+
+        $document = $application->documents()->firstOrFail();
+        $downloadUrl = route('admin.enrollment-applications.documents.show', [$application, $document]);
+        $this->get($downloadUrl)->assertRedirect(route('admin.login'));
+
+        $admin = User::factory()->create(['role' => 'admin']);
+        Mail::fake();
+        $this->actingAs($admin)
+            ->post('/admin/enrollment-applications/'.$application->application_number.'/process', ['action' => 'approve'])
+            ->assertRedirect();
+
+        $application->refresh();
+        $student = Student::findOrFail($application->student_id);
+        $this->assertSame('approved', $application->status);
+        $this->assertSame('active', $student->status);
+        $this->assertNull($application->sample_username);
+
+        $this->post('/portal/register', [
+            'first_name' => 'Juan',
+            'last_name' => 'Cruz',
+            'student_number' => $student->student_number,
+            'email' => 'applicant@example.test',
+            'password' => 'secure-password',
+            'password_confirmation' => 'secure-password',
+        ])->assertRedirect('/student/login');
+
+        $studentUser = User::where('email', 'applicant@example.test')->firstOrFail();
+        $this->assertSame($studentUser->id, $student->fresh()->user_id);
+        $this->assertSame($studentUser->id, $application->fresh()->applicant_user_id);
+        $this->assertTrue(Hash::check('secure-password', $studentUser->password));
+        $this->post('/student/login', [
+            'username' => 'applicant@example.test',
+            'password' => 'secure-password',
+        ])->assertRedirect('/student/dashboard');
+        $this->get('/student/dashboard')->assertOk()->assertSee('Apply / Submit Requirements');
+
+        $this->actingAs($admin)->get($downloadUrl)->assertDownload($document->original_name);
+        $this->get('/admin/enrollment-applications/'.$application->application_number)
+            ->assertOk()
+            ->assertSee('Submitted Requirements')
+            ->assertSee('already has portal access');
+    }
+
     public function test_subjects_outside_the_selected_program_year_or_semester_are_rejected(): void
     {
-        [$department, $program] = $this->makeCatalog();
+        [$program] = $this->makeCatalog();
         $otherProgram = Program::create([
             'code' => 'BSCS',
             'name' => 'Computer Science',
-            'department_id' => $department->id,
         ]);
         $otherSubject = Course::create([
             'code' => 'CS101',
@@ -217,7 +394,7 @@ class EnrollmentApplicationFlowTest extends TestCase
             'semester' => '1st',
             'program_id' => $otherProgram->id,
         ]);
-        $this->submitStepsOneToThree($department, $program);
+        $this->submitStepsOneToThree($program);
 
         $this->post('/enrollment/step/4', ['selected_subject_ids' => [$otherSubject->id]])
             ->assertSessionHasErrors('selected_subject_ids.0');
@@ -229,7 +406,7 @@ class EnrollmentApplicationFlowTest extends TestCase
     {
         $application = $this->submitPublicApplication();
 
-        $this->get('/admin/enrollment-applications')->assertRedirect('/portal/login');
+        $this->get('/admin/enrollment-applications')->assertRedirect('/admin/login');
 
         $student = User::factory()->create(['role' => 'student']);
         $this->actingAs($student)
@@ -241,6 +418,11 @@ class EnrollmentApplicationFlowTest extends TestCase
     {
         $application = $this->submitPublicApplication();
         $admin = User::factory()->create(['role' => 'admin']);
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.transport' => 'smtp',
+            'mail.mailers.smtp.host' => 'smtp.example.test',
+        ]);
         Mail::fake();
 
         $this->actingAs($admin)
@@ -261,8 +443,8 @@ class EnrollmentApplicationFlowTest extends TestCase
         $this->assertSame($admin->id, $application->approved_by);
         $this->assertMatchesRegularExpression('/^\d{4}-\d{5}$/', $student->student_id);
         $this->assertSame('Dela', $student->middle_name);
-        $this->assertSame($student->student_id, $application->sample_username);
-        $this->assertNotSame('Student@123', $application->getRawOriginal('sample_password'));
+        $this->assertNull($application->sample_username);
+        $this->assertNull($application->sample_password);
         $this->assertSame('enrolled', $enrollment->status);
         $this->assertSame($application->school_year, $enrollment->academic_year);
         $this->assertSame($application->semester, $enrollment->term);
@@ -276,20 +458,22 @@ class EnrollmentApplicationFlowTest extends TestCase
             'recipient' => $application->email,
             'status' => 'sent',
         ]);
-        Mail::assertSent(EnrollmentApplicationApproved::class, fn (EnrollmentApplicationApproved $mail): bool =>
-            $mail->hasTo($application->email)
+        Mail::assertSent(EnrollmentApplicationApproved::class, fn (EnrollmentApplicationApproved $mail): bool => $mail->hasTo($application->email)
         );
 
-        $message = (new EnrollmentApplicationApproved($application->fresh(['student', 'department', 'program'])))->render();
+        $message = (new EnrollmentApplicationApproved($application->fresh(['student', 'program'])))->render();
         $this->assertStringContainsString($student->student_id, $message);
-        $this->assertStringContainsString($application->full_name, $message);
-        $this->assertStringContainsString('Important:', $message);
+        $this->assertStringContainsString('Hello '.$application->first_name, $message);
+        $this->assertStringNotContainsString(route('student.login'), $message);
+        $this->assertStringContainsString('Create your student account', $message);
+        $this->assertStringContainsString(route('portal.register'), $message);
     }
 
     public function test_rejection_requires_a_reason_and_does_not_create_student_or_enrollment(): void
     {
         $application = $this->submitPublicApplication();
         $admin = User::factory()->create(['role' => 'admin']);
+        Mail::fake();
 
         $this->actingAs($admin)
             ->post('/admin/enrollment-applications/'.$application->application_number.'/process', [
@@ -299,16 +483,62 @@ class EnrollmentApplicationFlowTest extends TestCase
 
         $this->post('/admin/enrollment-applications/'.$application->application_number.'/process', [
             'action' => 'reject',
-            'rejection_reason' => 'Please submit the missing prior transcript.',
+            'rejection_reason' => "Please submit a clear photo. <script>alert('x')</script>",
         ])->assertRedirect();
 
         $application->refresh();
         $this->assertSame('rejected', $application->status);
         $this->assertSame($admin->id, $application->rejected_by);
-        $this->assertSame('Please submit the missing prior transcript.', $application->rejection_reason);
+        $this->assertSame("Please submit a clear photo. <script>alert('x')</script>", $application->rejection_reason);
         $this->assertSame(0, Student::count());
         $this->assertSame(0, Enrollment::count());
-        $this->assertSame(0, EmailHistory::count());
+        $this->assertDatabaseHas('email_histories', [
+            'enrollment_application_id' => $application->id,
+            'type' => 'Enrollment Application Update',
+            'status' => 'captured',
+        ]);
+        Mail::assertSent(EnrollmentApplicationRejected::class, fn (EnrollmentApplicationRejected $mail): bool => $mail->hasTo($application->email));
+
+        $message = (new EnrollmentApplicationRejected($application))->render();
+        $this->assertStringContainsString('Please submit a clear photo.', $message);
+        $this->assertStringNotContainsString("<script>alert('x')</script>", $message);
+        $this->assertStringContainsString('You may submit a new application', $message);
+    }
+
+    public function test_email_failure_does_not_undo_an_application_rejection(): void
+    {
+        $application = $this->submitPublicApplication();
+        $admin = User::factory()->create(['role' => 'admin']);
+        config(['mail.default' => 'missing-mailer']);
+
+        $this->actingAs($admin)
+            ->post('/admin/enrollment-applications/'.$application->application_number.'/process', [
+                'action' => 'reject',
+                'rejection_reason' => 'Please upload a clearer photo.',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('warning');
+
+        $this->assertDatabaseHas('enrollment_applications', [
+            'id' => $application->id,
+            'status' => 'rejected',
+            'rejection_reason' => 'Please upload a clearer photo.',
+        ]);
+        $this->assertDatabaseHas('email_histories', [
+            'enrollment_application_id' => $application->id,
+            'status' => 'failed',
+        ]);
+        $this->assertDatabaseCount('students', 0);
+
+        config(['mail.default' => 'array']);
+        $this->post('/admin/enrollment-applications/'.$application->application_number.'/resend-email')
+            ->assertRedirect()
+            ->assertSessionHas('warning', 'The email was captured by the configured test mailer, not delivered to the applicant.');
+
+        $this->assertDatabaseCount('email_histories', 2);
+        $this->get('/admin/enrollment-applications/'.$application->application_number)
+            ->assertOk()
+            ->assertSee('Resend Rejection Email');
     }
 
     public function test_admin_can_approve_an_application_after_marking_it_under_review(): void
@@ -372,7 +602,6 @@ class EnrollmentApplicationFlowTest extends TestCase
             'barangay' => $application->barangay,
             'city' => $application->city,
             'province' => $application->province,
-            'department_id' => $application->department_id,
             'program_id' => $application->program_id,
             'student_type' => $application->student_type,
             'year_level' => $application->year_level,
@@ -409,7 +638,6 @@ class EnrollmentApplicationFlowTest extends TestCase
             'barangay' => $firstApplication->barangay,
             'city' => $firstApplication->city,
             'province' => $firstApplication->province,
-            'department_id' => $firstApplication->department_id,
             'program_id' => $firstApplication->program_id,
             'student_type' => 'Returning Student',
             'year_level' => 2,
@@ -433,6 +661,11 @@ class EnrollmentApplicationFlowTest extends TestCase
     {
         $application = $this->submitPublicApplication();
         $admin = User::factory()->create(['role' => 'admin']);
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.transport' => 'smtp',
+            'mail.mailers.smtp.host' => 'smtp.example.test',
+        ]);
         $mailer = Mockery::mock(Mailer::class);
         $mailer->shouldReceive('send')->once()->andThrow(new RuntimeException('SMTP unavailable'));
         Mail::shouldReceive('to')->once()->with($application->email)->andReturn($mailer);
@@ -445,7 +678,7 @@ class EnrollmentApplicationFlowTest extends TestCase
         $this->assertDatabaseHas('email_histories', [
             'enrollment_application_id' => $application->id,
             'status' => 'failed',
-            'error_message' => 'SMTP unavailable',
+            'error_message' => 'Mail transport failed. Check the configured SMTP host, port, encryption, and provider credentials.',
         ]);
         $this->assertDatabaseHas('enrollment_applications', ['id' => $application->id, 'status' => 'approved']);
 
@@ -464,13 +697,40 @@ class EnrollmentApplicationFlowTest extends TestCase
         ]);
     }
 
+    public function test_mailtrap_sandbox_captures_email_without_claiming_it_was_delivered(): void
+    {
+        $application = $this->submitPublicApplication();
+        $admin = User::factory()->create(['role' => 'admin']);
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.transport' => 'smtp',
+            'mail.mailers.smtp.host' => 'sandbox.smtp.mailtrap.io',
+        ]);
+        Mail::fake();
+
+        $this->actingAs($admin)
+            ->post('/admin/enrollment-applications/'.$application->application_number.'/process', ['action' => 'approve'])
+            ->assertSessionHas('warning', 'The email was captured by the configured test mailer, not delivered to the applicant. Configure a live sending mail service to deliver it.');
+
+        $this->get('/admin/enrollment-applications/'.$application->application_number)
+            ->assertOk()
+            ->assertSee('Captured (not delivered)')
+            ->assertSee('Test mailers only capture messages and do not deliver them.');
+
+        $this->assertDatabaseHas('email_histories', [
+            'enrollment_application_id' => $application->id,
+            'status' => 'captured',
+            'error_message' => 'Configured test mailer captures messages but does not deliver them to the recipient.',
+            'sent_at' => null,
+        ]);
+        Mail::assertSent(EnrollmentApplicationApproved::class);
+    }
+
     private function makeCatalog(): array
     {
-        $department = Department::create(['code' => 'CIT', 'name' => 'College of Information Technology']);
         $program = Program::create([
             'code' => 'BSIT',
             'name' => 'BS Information Technology',
-            'department_id' => $department->id,
         ]);
         $subject = Course::create([
             'code' => 'IT101',
@@ -481,10 +741,10 @@ class EnrollmentApplicationFlowTest extends TestCase
             'program_id' => $program->id,
         ]);
 
-        return [$department, $program, $subject];
+        return [$program, $subject];
     }
 
-    private function submitStepsOneToThree(Department $department, Program $program): void
+    private function submitStepsOneToThree(Program $program): void
     {
         $this->post('/enrollment/step/1', [
             'first_name' => 'Juan',
@@ -505,7 +765,6 @@ class EnrollmentApplicationFlowTest extends TestCase
             'province' => 'Metro Manila',
         ])->assertRedirect('/enrollment?step=3');
         $this->post('/enrollment/step/3', [
-            'department_id' => $department->id,
             'program_id' => $program->id,
             'student_type' => 'New Student',
             'year_level' => 1,
@@ -516,13 +775,30 @@ class EnrollmentApplicationFlowTest extends TestCase
 
     private function submitPublicApplication(): EnrollmentApplication
     {
-        [$department, $program, $subject] = $this->makeCatalog();
-        $this->submitStepsOneToThree($department, $program);
+        Storage::fake('local');
+        [$program, $subject] = $this->makeCatalog();
+        $this->submitStepsOneToThree($program);
         $this->get('/enrollment?step=4');
         $this->post('/enrollment/step/4', ['selected_subject_ids' => [$subject->id]]);
         $submissionToken = $this->app['session.store']->get('enrollment_submission_token');
-        $this->post('/enrollment/submit', ['submission_token' => $submissionToken])->assertRedirect();
+        $this->post('/enrollment/submit', [
+            'submission_token' => $submissionToken,
+            ...$this->requirementUploads(),
+        ])->assertRedirect();
 
         return EnrollmentApplication::firstOrFail();
+    }
+
+    /**
+     * @return array{requirements: array<string, UploadedFile>}
+     */
+    private function requirementUploads(string $studentType = 'New Student'): array
+    {
+        $uploads = [];
+        foreach (config('enrollment.requirements.'.$studentType) as $key => $label) {
+            $uploads[$key] = UploadedFile::fake()->create($key.'.pdf', 100, 'application/pdf');
+        }
+
+        return ['requirements' => $uploads];
     }
 }
