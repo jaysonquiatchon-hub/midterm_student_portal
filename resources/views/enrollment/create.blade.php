@@ -26,13 +26,6 @@
         @endforeach
     </ol>
 
-    @if($errors->any())
-        <div class="alert alert-danger" role="alert">
-            <div class="fw-semibold mb-1">Please fix the following:</div>
-            <ul class="mb-0">@foreach($errors->all() as $message)<li>{{ $message }}</li>@endforeach</ul>
-        </div>
-    @endif
-
     <div class="card border-0 shadow-sm rounded-3">
         <div class="card-body p-4 p-md-5">
             @if($step < 5)

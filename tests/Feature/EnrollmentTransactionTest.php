@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Mail\EnrollmentConfirmed;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\EnrollmentApplication;
@@ -12,8 +11,6 @@ use App\Models\User;
 use Database\Seeders\AdminUserSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
-use RuntimeException;
 use Tests\TestCase;
 
 class EnrollmentTransactionTest extends TestCase
@@ -187,17 +184,18 @@ class EnrollmentTransactionTest extends TestCase
         $this->assertDatabaseCount('users', 0);
     }
 
-    public function test_seeded_admin_can_log_in_using_the_existing_admin_username(): void
+    public function test_seeded_admin_can_log_in_using_the_configured_email(): void
     {
+        config(['student_portal.admin_password' => 'safe-test-password']);
         $this->seed(AdminUserSeeder::class);
 
         $this->post('/admin/login', [
-            'username' => 'admin',
-            'password' => config('student_portal.admin_password'),
-        ])->assertRedirect('/students');
+            'username' => config('student_portal.admin_email'),
+            'password' => 'safe-test-password',
+        ])->assertRedirect('/dashboard');
 
         $this->assertAuthenticatedAs(User::where('email', config('student_portal.admin_email'))->firstOrFail());
-        $this->get('/admin/enrollments')->assertOk();
+        $this->get('/dashboard')->assertOk();
     }
 
     public function test_incorrect_login_credentials_do_not_authenticate(): void
@@ -223,49 +221,23 @@ class EnrollmentTransactionTest extends TestCase
         $this->assertAuthenticatedAs($student->user);
     }
 
-    public function test_a_student_can_submit_one_enrollment_per_term_and_track_its_reference(): void
+    public function test_term_enrollment_request_routes_are_removed(): void
     {
-        $student = $this->registerStudent('STU-2026-101');
-        $payload = ['academic_year' => '2026-2027', 'term' => '1st'];
+        $this->registerStudent('STU-ROUTE-001');
 
-        $this->get('/student/dashboard')->assertOk();
-        $this->get('/student/enrollments/create')->assertOk();
-        $this->post('/student/enrollments', $payload)->assertRedirect();
-
-        $enrollment = Enrollment::firstOrFail();
-        $this->assertMatchesRegularExpression('/^ENR-\d{4}-\d{6}$/', $enrollment->reference_number);
-        $this->assertSame('pending', $enrollment->status);
-
-        $this->post('/student/enrollments', $payload)->assertSessionHasErrors('term');
-        $this->assertDatabaseCount('enrollments', 1);
-
-        $this->get('/student/enrollments/'.$enrollment->reference_number)
-            ->assertOk()
-            ->assertSee($enrollment->reference_number)
-            ->assertSee('Pending');
+        $this->get('/student/enrollments/create')->assertNotFound();
+        $this->post('/student/enrollments')->assertNotFound();
+        $this->get('/admin/enrollments')->assertNotFound();
     }
 
-    public function test_admin_can_find_student_term_enrollment_requests_from_application_history(): void
+    public function test_admin_application_history_does_not_link_to_term_enrollment_requests(): void
     {
-        $this->registerStudent('STU-2026-118');
-        $this->post('/student/enrollments', [
-            'academic_year' => '2026-2027',
-            'term' => '1st',
-        ]);
-        $enrollment = Enrollment::firstOrFail();
         $admin = User::factory()->create(['role' => 'admin']);
 
         $this->actingAs($admin)
             ->get('/admin/enrollment-applications/history')
             ->assertOk()
-            ->assertSee('Term Enrollment Requests')
-            ->assertSee('href="'.route('admin.enrollments.index').'"', false);
-
-        $this->get(route('admin.enrollments.index'))
-            ->assertOk()
-            ->assertSee($enrollment->reference_number)
-            ->assertSee($enrollment->academic_year)
-            ->assertSee($enrollment->term);
+            ->assertDontSee('Term Enrollment Requests');
     }
 
     public function test_students_cannot_open_admin_pages_or_write_grades(): void
@@ -279,141 +251,33 @@ class EnrollmentTransactionTest extends TestCase
             'program_id' => $student->program_id,
         ]);
         $student->courses()->attach($course->id);
+        $enrollment = Enrollment::create([
+            'reference_number' => 'ENR-2026-000102',
+            'student_id' => $student->id,
+            'program_id' => $student->program_id,
+            'academic_year' => '2026-2027',
+            'term' => '1st',
+            'status' => 'enrolled',
+        ]);
+        $enrollment->courses()->attach($course->id);
 
         $this->get('/students')->assertForbidden();
-        $this->get('/admin/enrollments')->assertForbidden();
-        $this->post("/students/{$student->id}/courses/{$course->id}/grade", ['grade' => '1.00'])
+        $this->get('/admin/enrollments')->assertNotFound();
+        $this->post("/students/{$student->id}/enrollments/{$enrollment->reference_number}/courses/{$course->id}/grade", ['grade' => '1.00'])
             ->assertForbidden();
-    }
-
-    public function test_admin_processing_assigns_courses_sends_confirmation_and_keeps_grade_writes_admin_only(): void
-    {
-        $student = $this->registerStudent('STU-2026-103');
-        $course = Course::create([
-            'code' => 'IT103',
-            'title' => 'Systems Fundamentals',
-            'units' => 3,
-            'year_level' => 1,
-            'program_id' => $student->program_id,
-        ]);
-        $this->post('/student/enrollments', ['academic_year' => '2026-2027', 'term' => '1st']);
-        $enrollment = Enrollment::firstOrFail();
-        $admin = User::factory()->create(['role' => 'admin']);
-        Mail::fake();
-
-        $this->actingAs($admin)
-            ->get('/admin/enrollments')
-            ->assertOk()
-            ->assertSee($enrollment->reference_number);
-        $this->get('/admin/enrollments/'.$enrollment->reference_number)->assertOk();
-
-        $this->patch('/admin/enrollments/'.$enrollment->reference_number, ['status' => 'processing'])
-            ->assertRedirect();
-        Mail::assertNothingSent();
-        $this->patch('/admin/enrollments/'.$enrollment->reference_number, [
-            'status' => 'enrolled',
-            'program_id' => $student->program_id,
-            'course_ids' => [$course->id],
-        ])->assertRedirect();
-
-        $this->assertDatabaseHas('enrollments', [
-            'id' => $enrollment->id,
-            'status' => 'enrolled',
-            'program_id' => $student->program_id,
-        ]);
-        $this->assertDatabaseHas('enrollment_course', [
-            'enrollment_id' => $enrollment->id,
-            'course_id' => $course->id,
-        ]);
-        $this->get('/admin/enrollments/'.$enrollment->reference_number)->assertOk();
-        Mail::assertSent(EnrollmentConfirmed::class, fn (EnrollmentConfirmed $mail): bool => $mail->enrollment->reference_number === $enrollment->reference_number
-        );
-        $confirmation = (new EnrollmentConfirmed($enrollment->fresh(['student', 'program'])))->render();
-        $this->assertStringContainsString($enrollment->reference_number, $confirmation);
-        $this->assertStringContainsString($student->full_name, $confirmation);
-        $this->assertStringContainsString('Enrolled', $confirmation);
-        $this->assertStringContainsString('Program '.substr($student->program->code, 1), $confirmation);
-
-        $this->post("/students/{$student->id}/courses/{$course->id}/grade", ['grade' => '1.25'])
-            ->assertRedirect();
-        $this->assertDatabaseHas('course_student', [
-            'student_id' => $student->id,
-            'course_id' => $course->id,
-            'enrollment_id' => $enrollment->id,
-            'grade' => '1.25',
-        ]);
-
-        $this->actingAs($student->user)
-            ->get('/student/enrollments/'.$enrollment->reference_number)
-            ->assertOk()
-            ->assertSee('Enrolled')
-            ->assertSee($course->code);
-        $this->post("/students/{$student->id}/courses/{$course->id}/grade", ['grade' => '1.00'])
-            ->assertForbidden();
-    }
-
-    public function test_admin_cannot_skip_the_processing_transition(): void
-    {
-        $student = $this->registerStudent('STU-2026-108');
-        $this->post('/student/enrollments', ['academic_year' => '2026-2027', 'term' => '1st']);
-        $enrollment = Enrollment::firstOrFail();
-        $admin = User::factory()->create(['role' => 'admin']);
-
-        $this->actingAs($admin)
-            ->patch('/admin/enrollments/'.$enrollment->reference_number, [
-                'status' => 'enrolled',
-                'program_id' => $student->program_id,
-                'course_ids' => [],
-            ])
-            ->assertSessionHasErrors('status');
-
-        $this->assertDatabaseHas('enrollments', ['id' => $enrollment->id, 'status' => 'pending']);
-    }
-
-    public function test_admin_can_open_an_enrollment_by_its_reference_number(): void
-    {
-        $student = $this->registerStudent('STU-2026-115');
-        $this->post('/student/enrollments', ['academic_year' => '2026-2027', 'term' => '1st']);
-        $enrollment = Enrollment::firstOrFail();
-
-        $this->actingAs(User::factory()->create(['role' => 'admin']))
-            ->get('/admin/enrollments/'.$enrollment->reference_number)
-            ->assertOk()
-            ->assertSee($enrollment->reference_number)
-            ->assertSee($student->full_name);
-    }
-
-    public function test_email_delivery_failure_does_not_roll_back_enrollment(): void
-    {
-        $student = $this->registerStudent('STU-2026-109');
-        $course = Course::create([
-            'code' => 'IT109',
-            'title' => 'Portal Systems',
-            'units' => 3,
-            'year_level' => 1,
-            'program_id' => $student->program_id,
-        ]);
-        $this->post('/student/enrollments', ['academic_year' => '2026-2027', 'term' => '1st']);
-        $enrollment = Enrollment::firstOrFail();
-        $admin = User::factory()->create(['role' => 'admin']);
-        $this->actingAs($admin)->patch('/admin/enrollments/'.$enrollment->reference_number, ['status' => 'processing']);
-
-        Mail::shouldReceive('to')->once()->with($student->email)->andThrow(new RuntimeException('SMTP unavailable'));
-
-        $this->patch('/admin/enrollments/'.$enrollment->reference_number, [
-            'status' => 'enrolled',
-            'program_id' => $student->program_id,
-            'course_ids' => [$course->id],
-        ])->assertSessionHas('warning');
-
-        $this->assertDatabaseHas('enrollments', ['id' => $enrollment->id, 'status' => 'enrolled']);
     }
 
     public function test_a_student_cannot_view_another_students_enrollment(): void
     {
         $student = $this->registerStudent('STU-2026-104');
-        $this->post('/student/enrollments', ['academic_year' => '2026-2027', 'term' => '1st']);
-        $enrollment = Enrollment::firstOrFail();
+        $enrollment = Enrollment::create([
+            'reference_number' => 'ENR-2026-000104',
+            'student_id' => $student->id,
+            'program_id' => $student->program_id,
+            'academic_year' => '2026-2027',
+            'term' => '1st',
+            'status' => 'enrolled',
+        ]);
         $this->registerStudent('STU-2026-105');
 
         $this->get('/student/enrollments/'.$enrollment->reference_number)->assertNotFound();
@@ -429,7 +293,7 @@ class EnrollmentTransactionTest extends TestCase
             ->get('/courses')
             ->assertOk()
             ->assertSee(route('students.index'), false)
-            ->assertSee('Back to Students');
+            ->assertSee('Student Directory');
         $this->get('/courses/create')->assertOk();
 
         $this->post('/courses', [
@@ -437,6 +301,7 @@ class EnrollmentTransactionTest extends TestCase
             'title' => 'Secure Systems',
             'units' => 3,
             'year_level' => 2,
+            'semester' => '1st',
             'program_id' => $student->program_id,
         ])->assertRedirect('/courses');
 
@@ -448,6 +313,7 @@ class EnrollmentTransactionTest extends TestCase
             'title' => 'Secure Systems Revised',
             'units' => 3,
             'year_level' => 2,
+            'semester' => '1st',
             'program_id' => $student->program_id,
         ])->assertRedirect('/courses');
         $this->assertDatabaseHas('courses', ['id' => $courseId, 'title' => 'Secure Systems Revised']);
@@ -467,6 +333,7 @@ class EnrollmentTransactionTest extends TestCase
                 'birth_date' => $student->birth_date->toDateString(),
                 'year_level' => $student->year_level,
                 'program_id' => $student->program_id,
+                'status' => 'active',
             ])
             ->assertRedirect('/students');
 
@@ -487,8 +354,17 @@ class EnrollmentTransactionTest extends TestCase
             'year_level' => 1,
             'program_id' => $student->program_id,
         ]);
+        $enrollment = Enrollment::create([
+            'reference_number' => 'ENR-2026-000112',
+            'student_id' => $student->id,
+            'program_id' => $student->program_id,
+            'academic_year' => '2026-2027',
+            'term' => '1st',
+            'status' => 'enrolled',
+        ]);
+
         $this->actingAs(User::factory()->create(['role' => 'admin']))
-            ->post("/students/{$student->id}/courses/{$course->id}/grade", ['grade' => '1.00'])
+            ->post("/students/{$student->id}/enrollments/{$enrollment->reference_number}/courses/{$course->id}/grade", ['grade' => '1.00'])
             ->assertNotFound();
     }
 

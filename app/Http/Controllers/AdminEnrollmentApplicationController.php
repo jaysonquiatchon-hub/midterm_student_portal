@@ -12,12 +12,14 @@ use App\Models\Enrollment;
 use App\Models\EnrollmentApplication;
 use App\Models\Program;
 use App\Models\Student;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Throwable;
@@ -129,21 +131,39 @@ class AdminEnrollmentApplicationController extends Controller
         }
 
         if ($data['action'] === 'under_review') {
-            $application->update(['status' => 'under_review']);
+            DB::transaction(function () use ($application): void {
+                $lockedApplication = EnrollmentApplication::query()->lockForUpdate()->findOrFail($application->id);
+                if (! in_array($lockedApplication->status, ['pending', 'under_review'], true)) {
+                    throw ValidationException::withMessages([
+                        'action' => 'This application has already been reviewed and cannot be updated.',
+                    ]);
+                }
+
+                $lockedApplication->update(['status' => 'under_review']);
+            });
 
             return redirect()->route('admin.enrollment-applications.show', $application)
                 ->with('success', 'Application moved to Under Review.');
         }
 
         if ($data['action'] === 'reject') {
-            $application->update([
-                'status' => 'rejected',
-                'rejection_reason' => $data['rejection_reason'],
-                'rejected_by' => $request->user()->id,
-                'rejected_at' => now(),
-            ]);
+            $rejectedApplication = DB::transaction(function () use ($application, $data, $request): EnrollmentApplication {
+                $lockedApplication = EnrollmentApplication::query()->lockForUpdate()->findOrFail($application->id);
+                if (! in_array($lockedApplication->status, ['pending', 'under_review'], true)) {
+                    throw ValidationException::withMessages([
+                        'action' => 'This application has already been reviewed and cannot be rejected.',
+                    ]);
+                }
 
-            $rejectedApplication = $application->fresh();
+                $lockedApplication->update([
+                    'status' => 'rejected',
+                    'rejection_reason' => $data['rejection_reason'],
+                    'rejected_by' => $request->user()->id,
+                    'rejected_at' => now(),
+                ]);
+
+                return $lockedApplication->fresh();
+            });
             $history = $this->sendEnrollmentEmail(
                 $rejectedApplication,
                 new EnrollmentApplicationRejected($rejectedApplication),
@@ -172,10 +192,41 @@ class AdminEnrollmentApplicationController extends Controller
                 ]);
             }
 
+            $selectedSubjectIds = $lockedApplication->subjects()->pluck('courses.id')->map(fn ($id): int => (int) $id)->all();
+            $eligibleSubjectIds = Course::query()
+                ->whereIn('id', $selectedSubjectIds)
+                ->where('program_id', $lockedApplication->program_id)
+                ->where('year_level', $lockedApplication->year_level)
+                ->where('semester', $lockedApplication->semester)
+                ->where('status', 'active')
+                ->lockForUpdate()
+                ->pluck('id')
+                ->map(fn ($id): int => (int) $id)
+                ->all();
+            sort($selectedSubjectIds);
+            sort($eligibleSubjectIds);
+
+            if ($selectedSubjectIds === [] || $selectedSubjectIds !== $eligibleSubjectIds) {
+                throw ValidationException::withMessages([
+                    'action' => 'The application subjects are no longer eligible for the selected program and term. Edit the application before approving it.',
+                ]);
+            }
+
             $student = Student::query()
                 ->whereRaw('LOWER(email) = ?', [mb_strtolower($lockedApplication->email)])
                 ->lockForUpdate()
                 ->first();
+
+            $user = User::query()
+                ->whereRaw('LOWER(email) = ?', [mb_strtolower($lockedApplication->email)])
+                ->lockForUpdate()
+                ->first();
+
+            if ($user && (! $student || (int) $student->user_id !== (int) $user->id || ! $user->isStudent())) {
+                throw ValidationException::withMessages([
+                    'action' => 'The applicant email is already linked to a different account. Resolve the existing account before approving this application.',
+                ]);
+            }
 
             if ($student && Enrollment::query()
                 ->where('student_id', $student->id)
@@ -189,13 +240,8 @@ class AdminEnrollmentApplicationController extends Controller
             }
 
             if (! $student) {
-                // Calculate next auto-increment ID to generate the real unique student ID/number before creation
-                $nextAutoId = (DB::table('students')->max('id') ?? 0) + 1;
-                $computedStudentId = sprintf('%s-%05d', now()->format('Y'), $nextAutoId);
-
                 $student = Student::create([
-                    'student_id' => $computedStudentId,
-                    'student_number' => $computedStudentId,
+                    'student_number' => 'TMP-'.Str::random(16),
                     'first_name' => $lockedApplication->first_name,
                     'middle_name' => $lockedApplication->middle_name,
                     'last_name' => $lockedApplication->last_name,
@@ -209,6 +255,11 @@ class AdminEnrollmentApplicationController extends Controller
                     'program_id' => $lockedApplication->program_id,
                     'contact_number' => $lockedApplication->contact_number,
                     'status' => 'active',
+                ]);
+                $computedStudentId = sprintf('%s-%05d', now()->format('Y'), $student->id);
+                $student->update([
+                    'student_id' => $computedStudentId,
+                    'student_number' => $computedStudentId,
                 ]);
             } else {
                 $studentId = $student->student_id ?? sprintf('%s-%05d', now()->format('Y'), $student->id);
@@ -248,10 +299,10 @@ class AdminEnrollmentApplicationController extends Controller
                 'processed_at' => now(),
             ]);
 
-            $enrollment->courses()->sync($lockedApplication->subjects()->pluck('courses.id')->all());
+            $enrollment->courses()->sync($selectedSubjectIds);
             $student->courses()->syncWithoutDetaching(
-                $lockedApplication->subjects->mapWithKeys(fn ($subject): array => [
-                    $subject->id => ['enrollment_id' => $enrollment->id],
+                collect($selectedSubjectIds)->mapWithKeys(fn (int $subjectId): array => [
+                    $subjectId => ['enrollment_id' => $enrollment->id],
                 ])->all(),
             );
 

@@ -6,7 +6,7 @@ Hello {{ $application->first_name }},
 Your enrollment application (**{{ $application->application_number }}**) has been approved.
 
 - **Student number:** {{ $application->student->student_id }}
-- **Program:** {{ $application->program }}
+- **Program:** {{ $application->program?->name ?? 'N/A' }}
 - **Year Level:** {{ $application->year_level }}
 - **Semester:** {{ $application->semester }}
 - **School Year:** {{ $application->school_year }}

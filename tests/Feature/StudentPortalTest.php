@@ -53,7 +53,7 @@ class StudentPortalTest extends TestCase
         $this->assertGuest();
 
         $this->from(route('student.login'))->post(route('student.login.submit'), [
-            'username' => 'admin',
+            'username' => config('student_portal.admin_email'),
             'password' => 'password123',
         ])
             ->assertRedirect(route('student.login'))
@@ -61,10 +61,10 @@ class StudentPortalTest extends TestCase
         $this->assertGuest();
 
         $this->post(route('admin.login.submit'), [
-            'username' => 'admin',
+            'username' => config('student_portal.admin_email'),
             'password' => 'password123',
         ])
-            ->assertRedirect(route('students.index'))
+            ->assertRedirect(route('dashboard'))
             ->assertSessionHas('portal_access', true);
 
         $this->post(route('portal.logout'))
@@ -80,13 +80,13 @@ class StudentPortalTest extends TestCase
             ->get(route('courses.index'))
             ->assertSeeInOrder([
                 'Student Portal</a>',
-                'class="portal-nav-link"',
+                'portal-nav-link',
                 '>Dashboard</a>',
-                'class="portal-nav-link active"',
+                'portal-nav-link active',
                 '>Courses</a>',
-                'class="portal-nav-link"',
+                'portal-nav-link',
                 '>Enrollment Applications</a>',
-                'class="portal-nav-link"',
+                'portal-nav-link',
                 '>Students</a>',
                 '>Logout</button>',
             ], false);
@@ -95,10 +95,10 @@ class StudentPortalTest extends TestCase
             ->actingAs($admin)
             ->get(route('students.index'))
             ->assertSeeInOrder([
-                'class="portal-nav-link"',
+                'class="nav-link portal-nav-link"',
                 '>Courses</a>',
                 '>Enrollment Applications</a>',
-                'class="portal-nav-link active"',
+                'portal-nav-link active',
                 '>Students</a>',
             ], false);
 
@@ -106,7 +106,7 @@ class StudentPortalTest extends TestCase
         $this->withSession(['portal_access' => true])
             ->actingAs($student)
             ->get(route('catalog.courses.index'))
-            ->assertSee('href="'.route('catalog.courses.index').'"', false)
+            ->assertDontSee('>Courses</a>', false)
             ->assertDontSee('Enrollment Applications')
             ->assertDontSee('Student Directory');
     }
@@ -114,7 +114,7 @@ class StudentPortalTest extends TestCase
     public function test_guest_is_redirected_from_dashboard_to_portal_login(): void
     {
         $this->get(route('dashboard'))
-            ->assertRedirect(route('student.login'));
+            ->assertRedirect(route('admin.login'));
     }
 
     public function test_dashboard_displays_student_course_program_and_pending_application_totals(): void
@@ -151,19 +151,15 @@ class StudentPortalTest extends TestCase
         $this->get(route('dashboard'))
             ->assertOk()
             ->assertSee('Total Students')
-            ->assertSee('Active Courses')
-            ->assertSee('Programs')
             ->assertSee('Pending Applications')
-            ->assertSee('Students by Program')
-            ->assertSee('Recently Added Students')
-            ->assertSee($student->full_name)
-            ->assertSee($student->student_number)
+            ->assertSee('Recent Enrollment Applications')
+            ->assertSee('Active Students')
+            ->assertSee('Inactive Students')
+            ->assertSee('Dropped Students')
             ->assertViewHas('studentCount', 1)
-            ->assertViewHas('activeCourseCount', 1)
-            ->assertViewHas('programCount', 2)
             ->assertViewHas('pendingApplicationCount', 1)
-            ->assertViewHas('programStats', fn ($stats): bool => $stats->first()['student_count'] === 1)
-            ->assertViewHas('recentStudents', fn ($students): bool => $students->contains('id', $student->id));
+            ->assertViewHas('activeStudentCount', 1)
+            ->assertViewHas('recentApplications', fn ($applications): bool => $applications->count() === 2);
     }
 
     public function test_student_can_update_personal_information_and_linked_login_details(): void
@@ -213,6 +209,32 @@ class StudentPortalTest extends TestCase
             'name' => 'Taylor Rae Student Jr.',
             'email' => 'taylor.updated@example.test',
         ]);
+    }
+
+    public function test_inactive_and_dropped_students_cannot_log_in_or_continue_using_an_existing_session(): void
+    {
+        $program = $this->createProgram('BSIT');
+
+        foreach (['inactive', 'dropped'] as $status) {
+            $student = $this->createStudent($program);
+            $user = User::factory()->create([
+                'email' => $student->email,
+                'password' => 'portal-password',
+                'role' => 'student',
+            ]);
+            $student->update(['user_id' => $user->id, 'status' => $status]);
+
+            $this->post(route('student.login.submit'), [
+                'username' => $student->email,
+                'password' => 'portal-password',
+            ])->assertSessionHasErrors('username');
+
+            $this->actingAs($user)
+                ->withSession(['portal_access' => true])
+                ->get(route('student.dashboard'))
+                ->assertRedirect(route('student.login'));
+            $this->assertGuest();
+        }
     }
 
     public function test_student_profile_photo_is_private_and_rejects_non_images(): void
@@ -273,7 +295,7 @@ class StudentPortalTest extends TestCase
             'term' => '1st',
             'status' => 'enrolled',
         ]);
-        $enrollment->courses()->attach($course->id);
+        $enrollment->courses()->attach($course->id, ['grade' => '1.25']);
         $student->courses()->attach($course->id, ['enrollment_id' => $enrollment->id, 'grade' => '1.25']);
 
         $this->withSession(['portal_access' => true])
@@ -289,14 +311,22 @@ class StudentPortalTest extends TestCase
         $program = $this->createProgram('BSIT');
         $student = $this->createStudent($program);
         $course = $this->createCourse($program, 'IT101');
-        $student->courses()->attach($course->id);
-
-        $this->post(route('students.courses.update-grade', [$student, $course]), [
-            'grade' => '1.25',
-        ])->assertRedirect(route('student.login'));
-
-        $this->assertDatabaseHas('course_student', [
+        $enrollment = Enrollment::create([
+            'reference_number' => 'ENR-2026-000003',
             'student_id' => $student->id,
+            'program_id' => $program->id,
+            'academic_year' => '2026-2027',
+            'term' => '1st',
+            'status' => 'enrolled',
+        ]);
+        $enrollment->courses()->attach($course->id);
+
+        $this->post(route('students.enrollments.courses.update-grade', [$student, $enrollment, $course]), [
+            'grade' => '1.25',
+        ])->assertRedirect(route('admin.login'));
+
+        $this->assertDatabaseHas('enrollment_course', [
+            'enrollment_id' => $enrollment->id,
             'course_id' => $course->id,
             'grade' => null,
         ]);
@@ -314,44 +344,66 @@ class StudentPortalTest extends TestCase
             ->assertDontSee($archivedCourse->title);
     }
 
-    public function test_portal_user_can_create_update_and_delete_a_student(): void
+    public function test_subjects_with_student_history_cannot_be_changed_or_deleted(): void
     {
         $program = $this->createProgram('BSIT');
+        $student = $this->createStudent($program);
+        $course = $this->createCourse($program, 'IT101');
+        $student->courses()->attach($course->id);
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $this->actingAs($admin)
+            ->put('/courses/'.$course->id, [
+                'code' => 'IT101',
+                'title' => 'Revised Subject',
+                'units' => 3,
+                'year_level' => 1,
+                'semester' => '1st',
+                'program_id' => $program->id,
+            ])
+            ->assertSessionHasErrors('course');
+
+        $this->delete('/courses/'.$course->id)->assertMethodNotAllowed();
+        $this->delete('/programs/'.$program->id)->assertNotFound();
+
+        $this->assertDatabaseHas('programs', ['id' => $program->id]);
+        $this->assertDatabaseHas('courses', ['id' => $course->id, 'title' => 'IT101 Course']);
+    }
+
+    public function test_admin_can_edit_students_without_manual_creation_or_deletion(): void
+    {
+        $program = $this->createProgram('BSIT');
+        $student = $this->createStudent($program);
         $admin = User::factory()->create(['role' => 'admin']);
         $this->withSession(['portal_access' => true])->actingAs($admin);
 
-        $this->post(route('students.store'), [
-            'student_number' => 'STU-2026-001',
-            'first_name' => 'Casey',
-            'last_name' => 'Student',
-            'email' => 'casey@example.test',
+        $this->put(route('students.update', $student), [
+            'student_number' => $student->student_number,
+            'first_name' => $student->first_name,
+            'middle_name' => null,
+            'last_name' => 'Updated',
+            'suffix' => null,
+            'email' => $student->email,
+            'contact_number' => null,
+            'address' => null,
             'birth_date' => '2005-04-10',
             'year_level' => 1,
             'program_id' => $program->id,
-        ])->assertRedirect(route('students.index'));
-
-        $student = Student::where('student_number', 'STU-2026-001')->firstOrFail();
-
-        $this->put(route('students.update', $student), [
-            'student_number' => 'STU-2026-001',
-            'first_name' => 'Casey',
-            'last_name' => 'Updated',
-            'email' => 'casey@example.test',
-            'birth_date' => '2005-04-10',
-            'year_level' => 2,
-            'program_id' => $program->id,
+            'status' => 'dropped',
         ])->assertRedirect(route('students.index'));
 
         $this->assertDatabaseHas('students', [
             'id' => $student->id,
             'last_name' => 'Updated',
-            'year_level' => 2,
+            'status' => 'dropped',
         ]);
 
-        $this->delete(route('students.destroy', $student))
-            ->assertRedirect(route('students.index'));
+        $this->delete('/students/'.$student->id)
+            ->assertMethodNotAllowed();
 
-        $this->assertDatabaseMissing('students', ['id' => $student->id]);
+        $this->get('/students/create')->assertNotFound();
+        $this->post('/students')->assertMethodNotAllowed();
+        $this->assertDatabaseHas('students', ['id' => $student->id]);
     }
 
     public function test_student_directory_shows_profile_link_only_on_the_view_button(): void
@@ -369,6 +421,32 @@ class StudentPortalTest extends TestCase
             ->assertSee(route('students.show', $student), false)
             ->assertSee(route('students.edit', $student), false)
             ->assertDontSee('<a href="'.route('students.show', $student).'">'.$student->full_name.'</a>', false);
+    }
+
+    public function test_student_directory_search_and_status_filter_keep_pagination_query(): void
+    {
+        $program = $this->createProgram('BSIT');
+        $matchingStudent = $this->createStudent($program);
+        $matchingStudent->update(['status' => 'inactive']);
+        $this->createStudent($program);
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $otherStudent = $this->createStudent($program);
+        $this->actingAs($admin)
+            ->get(route('students.index', ['search' => $matchingStudent->student_number, 'status' => 'inactive']))
+            ->assertOk()
+            ->assertSeeText($matchingStudent->student_number)
+            ->assertDontSeeText($otherStudent->student_number)
+            ->assertViewHas('students', fn ($students): bool => $students->total() === 1
+                && str_contains($students->url(1), 'search='.$matchingStudent->student_number)
+                && str_contains($students->url(1), 'status=inactive'));
+
+        $this->get(route('students.index', ['search' => $matchingStudent->full_name]))
+            ->assertOk()
+            ->assertSeeText($matchingStudent->student_number);
+        $this->get(route('students.index', ['search' => $matchingStudent->email]))
+            ->assertOk()
+            ->assertSeeText($matchingStudent->student_number);
     }
 
     public function test_success_flash_message_renders_as_a_bottom_right_toast_that_hides_after_two_seconds(): void
@@ -438,51 +516,74 @@ class StudentPortalTest extends TestCase
         $student = $this->createStudent($program);
         $enrolledCourse = $this->createCourse($program, 'IT101');
         $otherCourse = $this->createCourse($program, 'IT102');
-        $student->courses()->attach($enrolledCourse->id);
+        $enrollment = Enrollment::create([
+            'reference_number' => 'ENR-2026-000004',
+            'student_id' => $student->id,
+            'program_id' => $program->id,
+            'academic_year' => '2026-2027',
+            'term' => '1st',
+            'status' => 'enrolled',
+        ]);
+        $enrollment->courses()->attach($enrolledCourse->id);
         $admin = User::factory()->create(['role' => 'admin']);
         $this->withSession(['portal_access' => true])->actingAs($admin);
 
         $this->from(route('students.show', $student))
-            ->post(route('students.courses.update-grade', [$student, $enrolledCourse]), [
+            ->post(route('students.enrollments.courses.update-grade', [$student, $enrollment, $enrolledCourse]), [
                 'grade' => 'Incomplete',
             ])
             ->assertSessionHasErrors('grade');
 
-        $this->post(route('students.courses.update-grade', [$student, $enrolledCourse]), [
+        $this->post(route('students.enrollments.courses.update-grade', [$student, $enrollment, $enrolledCourse]), [
             'grade' => '1.25',
         ])->assertRedirect();
 
-        $this->assertDatabaseHas('course_student', [
-            'student_id' => $student->id,
+        $this->assertDatabaseHas('enrollment_course', [
+            'enrollment_id' => $enrollment->id,
             'course_id' => $enrolledCourse->id,
             'grade' => '1.25',
         ]);
 
-        $this->post(route('students.courses.update-grade', [$student, $otherCourse]), [
+        $this->post(route('students.enrollments.courses.update-grade', [$student, $enrollment, $otherCourse]), [
             'grade' => '1.50',
         ])->assertNotFound();
     }
 
-    public function test_student_number_and_email_must_be_unique(): void
+    public function test_admin_can_update_a_grade_on_the_specific_enrollment_record(): void
     {
         $program = $this->createProgram('BSIT');
         $student = $this->createStudent($program);
+        $course = $this->createCourse($program, 'IT101');
+        $enrollment = Enrollment::create([
+            'reference_number' => 'ENR-2026-000002',
+            'student_id' => $student->id,
+            'program_id' => $program->id,
+            'academic_year' => '2026-2027',
+            'term' => '1st',
+            'status' => 'enrolled',
+        ]);
+        $enrollment->courses()->attach($course->id);
+
+        $this->actingAs(User::factory()->create(['role' => 'admin']))
+            ->post(route('students.enrollments.courses.update-grade', [$student, $enrollment, $course]), ['grade' => '1.25'])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('enrollment_course', [
+            'enrollment_id' => $enrollment->id,
+            'course_id' => $course->id,
+            'grade' => '1.25',
+        ]);
+    }
+
+    public function test_manual_student_add_routes_are_not_available(): void
+    {
+        $program = $this->createProgram('BSIT');
         $admin = User::factory()->create(['role' => 'admin']);
         $this->withSession(['portal_access' => true])->actingAs($admin);
 
-        $this->from(route('students.create'))
-            ->post(route('students.store'), [
-                'student_number' => $student->student_number,
-                'first_name' => 'Another',
-                'last_name' => 'Student',
-                'email' => $student->email,
-                'birth_date' => '2005-04-10',
-                'year_level' => 1,
-                'program_id' => $program->id,
-            ])
-            ->assertSessionHasErrors(['student_number', 'email']);
-
-        $this->assertDatabaseCount('students', 1);
+        $this->get('/students/create')->assertNotFound();
+        $this->post('/students')->assertMethodNotAllowed();
+        $this->assertDatabaseCount('students', 0);
     }
 
     private function createProgram(string $code): Program

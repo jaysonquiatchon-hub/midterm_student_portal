@@ -4,20 +4,12 @@
 <div class="row justify-content-center align-items-center mt-5">
     <div class="col-md-5 col-lg-4">
         
-        <!-- Interception & Logout Flash Warning Alerts -->
-        @if(session('warning'))
-            <div class="alert alert-warning alert-dismissible fade show text-center mb-3" role="alert">
-                {{ session('warning') }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        @endif
-
         <!-- Card Container styled to match the Student Directory UI -->
-        <div class="card border-0 shadow-sm rounded-3">
+        <div class="card auth-card rounded-3">
             <div class="card-body p-4">
                 <div class="text-center mb-4">
                     <h3 class="fw-bold text-dark mb-1">{{ $portalTitle }}</h3>
-                    <p class="text-muted small mb-0">{{ $portalDescription }}</p>
+                <p class="text-muted small mb-0">{{ $portalDescription }}</p>
                 </div>
 
                 <form action="{{ route($loginRoute) }}" method="POST">
@@ -74,6 +66,7 @@
             @if ($isStudentLogin)
                 <a href="{{ route('portal.register') }}" class="btn btn-outline-primary btn-sm">Create student account</a>
                 <a href="{{ route('enrollment.create') }}" class="btn btn-outline-primary btn-sm">Start an application</a>
+                <a href="{{ route('enrollment.status') }}" class="btn btn-link btn-sm">Check application status</a>
             @endif
         </div>
     </div>

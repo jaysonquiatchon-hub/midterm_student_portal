@@ -6,7 +6,6 @@
         <div><h1 class="h3 fw-bold mb-1">Edit Pending Application</h1><p class="text-muted mb-0">{{ $application->application_number }} · {{ $application->full_name }}</p></div>
         <a href="{{ route('admin.enrollment-applications.show', $application) }}" class="btn btn-outline-secondary">Back to Review</a>
     </div>
-    @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
     <form action="{{ route('admin.enrollment-applications.update', $application) }}" method="POST">
         @csrf @method('PATCH')
         <h2 class="h5 fw-bold border-bottom pb-2">Personal Information</h2>

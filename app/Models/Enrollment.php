@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\Schema;
 
 class Enrollment extends Model
 {
@@ -49,6 +50,12 @@ class Enrollment extends Model
 
     public function courses(): BelongsToMany
     {
-        return $this->belongsToMany(Course::class, 'enrollment_course')->withTimestamps();
+        $courses = $this->belongsToMany(Course::class, 'enrollment_course')->withTimestamps();
+
+        if (Schema::hasColumn('enrollment_course', 'grade')) {
+            $courses->withPivot('grade');
+        }
+
+        return $courses;
     }
 }

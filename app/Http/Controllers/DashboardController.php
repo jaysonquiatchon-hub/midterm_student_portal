@@ -2,9 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Course;
 use App\Models\EnrollmentApplication;
-use App\Models\Program;
 use App\Models\Student;
 use Illuminate\View\View;
 
@@ -12,29 +10,18 @@ class DashboardController extends Controller
 {
     public function index(): View
     {
-        $programs = Program::query()
-            ->withCount('students')
-            ->orderByDesc('students_count')
-            ->orderBy('name')
-            ->get();
-
-        $largestProgramCount = max((int) $programs->max('students_count'), 1);
-
-        $programStats = $programs->map(fn (Program $program): array => [
-            'program' => $program,
-            'student_count' => $program->students_count,
-            'percentage' => (int) round($program->students_count / $largestProgramCount * 100),
-        ]);
-
         return view('dashboard', [
             'studentCount' => Student::count(),
-            'activeCourseCount' => Course::query()->where('status', 'active')->count(),
-            'programCount' => Program::count(),
+            'activeStudentCount' => Student::query()->where('status', 'active')->count(),
+            'inactiveStudentCount' => Student::query()->where('status', 'inactive')->count(),
+            'droppedStudentCount' => Student::query()->where('status', 'dropped')->count(),
             'pendingApplicationCount' => EnrollmentApplication::query()->where('status', 'pending')->count(),
-            'programStats' => $programStats,
-            'recentStudents' => Student::query()
+            'approvedApplicationCount' => EnrollmentApplication::query()->where('status', 'approved')->count(),
+            'rejectedApplicationCount' => EnrollmentApplication::query()->where('status', 'rejected')->count(),
+            'recentApplications' => EnrollmentApplication::query()
                 ->with('program')
-                ->latest()
+                ->latest('submitted_at')
+                ->orderByDesc('id')
                 ->limit(5)
                 ->get(),
         ]);

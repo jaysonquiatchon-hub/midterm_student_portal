@@ -73,7 +73,7 @@ class PortalAuthController extends Controller
 
             if (! $student || mb_strtolower($student->email) !== $data['email']) {
                 throw ValidationException::withMessages([
-                    'student_number' => 'The student number and email must match an approved enrollment record.',
+                    'student_number' => 'Student account creation is available only after an enrollment application is approved. Check your application status using the application number and email address.',
                 ]);
             }
 
@@ -84,9 +84,9 @@ class PortalAuthController extends Controller
                 ->latest('approved_at')
                 ->first();
 
-            if (! $application || $student->status === 'archived') {
+            if (! $application || $student->status !== 'active') {
                 throw ValidationException::withMessages([
-                    'student_number' => 'A student account can only be created after the enrollment application is approved.',
+                    'student_number' => 'Student account creation is available only after an enrollment application is approved. Check your application status using the application number and email address.',
                 ]);
             }
 
@@ -160,11 +160,7 @@ class PortalAuthController extends Controller
         ]);
 
         $username = mb_strtolower(trim($credentials['username']));
-        $adminEmail = mb_strtolower((string) config('student_portal.admin_email'));
-        $lookupEmail = $expectedRole === 'admin' && $username === 'admin'
-            ? $adminEmail
-            : $username;
-        $user = User::query()->whereRaw('LOWER(email) = ?', [$lookupEmail])->first();
+        $user = User::query()->whereRaw('LOWER(email) = ?', [$username])->first();
 
         if (! $user && $expectedRole === 'student') {
             $student = Student::query()
@@ -184,10 +180,10 @@ class PortalAuthController extends Controller
 
         if ($expectedRole === 'student') {
             $student = $user->student;
-            if (! $student || $student->status === 'archived') {
+            if (! $student || $student->status !== 'active') {
                 throw ValidationException::withMessages([
                     'username' => $student
-                        ? 'This student account is archived and cannot sign in. Contact the administrator for help.'
+                        ? 'This student account is inactive or dropped and cannot sign in. Contact the administrator for help.'
                         : 'This account is not linked to a student profile. Contact the administrator for help.',
                 ]);
             }
@@ -197,6 +193,6 @@ class PortalAuthController extends Controller
         $request->session()->regenerate();
         $request->session()->put('portal_access', true);
 
-        return redirect()->route($expectedRole === 'admin' ? 'students.index' : 'student.dashboard');
+        return redirect()->route($expectedRole === 'admin' ? 'dashboard' : 'student.dashboard');
     }
 }

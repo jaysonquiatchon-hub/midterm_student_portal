@@ -10,25 +10,11 @@
         <a href="{{ route('student.dashboard') }}" class="btn btn-outline-secondary">Back to portal</a>
     </div>
 
-    @if (session('success'))
-        <div class="alert alert-success" role="status">{{ session('success') }}</div>
-    @endif
-
     <div class="row g-4">
         <div class="col-lg-8">
             <div class="card border-0 shadow-sm rounded-3">
                 <div class="card-body p-4">
                     <h2 class="h5 fw-bold mb-3">Personal information</h2>
-                    @if ($errors->any())
-                        <div class="alert alert-danger" role="alert">
-                            <strong>Please review the following:</strong>
-                            <ul class="mb-0 mt-1">
-                                @foreach ($errors->all() as $message)
-                                    <li>{{ $message }}</li>
-                                @endforeach
-                            </ul>
-                        </div>
-                    @endif
                     <form method="POST" action="{{ route('student.profile.update') }}">
                         @csrf
                         @method('PUT')

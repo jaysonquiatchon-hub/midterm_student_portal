@@ -37,6 +37,11 @@ class Student extends Model
         return $this->hasMany(Enrollment::class);
     }
 
+    public function enrollmentApplications(): HasMany
+    {
+        return $this->hasMany(EnrollmentApplication::class);
+    }
+
     // A student is enrolled in many courses (through course_student)
     public function courses(): BelongsToMany
     {

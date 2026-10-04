@@ -12,11 +12,16 @@ class AdminUserSeeder extends Seeder
      */
     public function run(): void
     {
+        $password = config('student_portal.admin_password');
+        if (! is_string($password) || $password === '') {
+            return;
+        }
+
         User::firstOrCreate(
             ['email' => config('student_portal.admin_email')],
             [
                 'name' => 'Portal Administrator',
-                'password' => config('student_portal.admin_password'),
+                'password' => $password,
                 'role' => 'admin',
             ],
         );

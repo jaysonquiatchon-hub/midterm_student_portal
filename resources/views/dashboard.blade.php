@@ -3,126 +3,63 @@
 @section('content')
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
     <div>
-        <h1 class="h2 fw-bold mb-1">Dashboard</h1>
-        <p class="text-muted mb-0">Quick overview of students and academic records.</p>
+        <h1 class="h2 fw-bold mb-1">Administrator Dashboard</h1>
+        <p class="text-muted mb-0">Current student and application totals from the SIS records.</p>
     </div>
-    <a href="{{ route('students.create') }}" class="btn btn-primary">+ Add Student</a>
+    <a href="{{ route('admin.enrollment-applications.index') }}" class="btn btn-primary">Review applications</a>
 </div>
 
 <div class="row g-3 mb-4">
-    <div class="col-6 col-xl-3">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <p class="text-muted mb-2">Total Students</p>
-                <p class="display-6 fw-bold mb-0">{{ number_format($studentCount) }}</p>
-                <a href="{{ route('students.index') }}" class="small">View student directory</a>
-            </div>
+    @foreach ([
+        ['Total Students', $studentCount, 'students.index', null],
+        ['Active Students', $activeStudentCount, 'students.index', 'active'],
+        ['Inactive Students', $inactiveStudentCount, 'students.index', 'inactive'],
+        ['Dropped Students', $droppedStudentCount, 'students.index', 'dropped'],
+    ] as [$label, $count, $route, $status])
+        <div class="col-6 col-xl-3">
+            <a href="{{ route($route, $status ? ['status' => $status] : []) }}" class="card dashboard-stat-card h-100 text-decoration-none">
+                <div class="card-body"><p class="text-muted mb-2">{{ $label }}</p><p class="display-6 fw-bold mb-0">{{ number_format($count) }}</p></div>
+            </a>
         </div>
-    </div>
-    <div class="col-6 col-xl-3">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <p class="text-muted mb-2">Active Courses</p>
-                <p class="display-6 fw-bold mb-0">{{ number_format($activeCourseCount) }}</p>
-                <a href="{{ route('courses.index') }}" class="small">View course catalog</a>
-            </div>
+    @endforeach
+    @foreach ([
+        ['Pending Applications', $pendingApplicationCount, 'pending'],
+        ['Approved Applications', $approvedApplicationCount, 'approved'],
+        ['Rejected Applications', $rejectedApplicationCount, 'rejected'],
+    ] as [$label, $count, $status])
+        <div class="col-6 col-xl-3">
+            <a href="{{ route('admin.enrollment-applications.history', ['status' => $status]) }}" class="card dashboard-stat-card h-100 text-decoration-none">
+                <div class="card-body"><p class="text-muted mb-2">{{ $label }}</p><p class="display-6 fw-bold mb-0">{{ number_format($count) }}</p></div>
+            </a>
         </div>
-    </div>
-    <div class="col-6 col-xl-3">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <p class="text-muted mb-2">Programs</p>
-                <p class="display-6 fw-bold mb-0">{{ number_format($programCount) }}</p>
-                <span class="small text-muted">Academic programs in the portal</span>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-xl-3">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <p class="text-muted mb-2">Pending Applications</p>
-                <p class="display-6 fw-bold mb-0">{{ number_format($pendingApplicationCount) }}</p>
-                <span class="small text-muted">Applications waiting for review</span>
-            </div>
-        </div>
-    </div>
+    @endforeach
 </div>
 
-<div class="row g-4">
-    <section class="col-lg-5" aria-labelledby="program-breakdown-heading">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <h2 id="program-breakdown-heading" class="h5 fw-bold mb-1">Students by Program</h2>
-                <p class="text-muted small mb-4">Student totals for each academic program.</p>
-
-                @forelse ($programStats as $stat)
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between gap-3 mb-1">
-                            <span>{{ $stat['program']->name }}</span>
-                            <strong>{{ number_format($stat['student_count']) }}</strong>
-                        </div>
-                        <div
-                            class="progress"
-                            role="progressbar"
-                            aria-label="Students in {{ $stat['program']->name }}"
-                            aria-valuenow="{{ $stat['student_count'] }}"
-                            aria-valuemin="0"
-                            aria-valuemax="{{ max($studentCount, 1) }}"
-                        >
-                            <div class="progress-bar" style="width: {{ $stat['percentage'] }}%"></div>
-                        </div>
-                    </div>
-                @empty
-                    <p class="text-muted mb-0">No programs have been added yet.</p>
-                @endforelse
-            </div>
+<section class="card border-0 shadow-sm" aria-labelledby="recent-applications-heading">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <div><h2 id="recent-applications-heading" class="h5 fw-bold mb-1">Recent Enrollment Applications</h2><p class="text-muted small mb-0">Most recently submitted applications.</p></div>
+            <a href="{{ route('admin.enrollment-applications.history') }}" class="btn btn-sm btn-outline-primary">View all</a>
         </div>
-    </section>
-
-    <section class="col-lg-7" aria-labelledby="recent-students-heading">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
-                    <div>
-                        <h2 id="recent-students-heading" class="h5 fw-bold mb-1">Recently Added Students</h2>
-                        <p class="text-muted small mb-0">The latest student records added to the portal.</p>
-                    </div>
-                    <a href="{{ route('students.index') }}" class="btn btn-sm btn-outline-primary">View All</a>
-                </div>
-
-                <div class="table-responsive">
-                    <table class="table table-striped align-middle mb-0">
-                        <thead>
-                            <tr>
-                                <th scope="col">Student</th>
-                                <th scope="col">Program</th>
-                                <th scope="col">Year</th>
-                                <th scope="col"><span class="visually-hidden">Action</span></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse ($recentStudents as $student)
-                                <tr>
-                                    <td>
-                                        <span class="d-block fw-semibold">{{ $student->full_name }}</span>
-                                        <small class="text-muted">{{ $student->student_number }}</small>
-                                    </td>
-                                    <td>{{ $student->program?->code ?? 'N/A' }}</td>
-                                    <td>{{ $student->year_level }}</td>
-                                    <td class="text-end">
-                                        <a href="{{ route('students.show', $student) }}" class="btn btn-sm btn-outline-primary">View</a>
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="4" class="text-center text-muted py-4">No students have been added yet.</td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle mb-0">
+                <thead><tr><th>Application No.</th><th>Applicant</th><th>Program</th><th>Submitted</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    @forelse ($recentApplications as $application)
+                        <tr>
+                            <td class="font-monospace">{{ $application->application_number }}</td>
+                            <td>{{ $application->full_name }}</td>
+                            <td>{{ $application->program?->code ?? $application->program?->name ?? '—' }}</td>
+                            <td>{{ $application->submitted_at?->format('M j, Y') ?? '—' }}</td>
+                            <td><span class="badge text-bg-{{ $application->status === 'approved' ? 'success' : ($application->status === 'rejected' ? 'danger' : ($application->status === 'pending' ? 'warning' : 'secondary')) }}">{{ ucwords(str_replace('_', ' ', $application->status)) }}</span></td>
+                            <td class="text-end"><a href="{{ route('admin.enrollment-applications.show', $application) }}" class="btn btn-sm btn-outline-primary">Review</a></td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="6" class="text-center text-muted py-4">No enrollment applications have been submitted.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
         </div>
-    </section>
-</div>
+    </div>
+</section>
 @endsection

@@ -20,13 +20,13 @@
 
     @if($enrollment->status === 'enrolled')
         <h4 class="fw-bold mb-3">Assigned Courses</h4>
+        <p class="text-muted">Total units: <strong>{{ $enrollment->courses->sum('units') }}</strong></p>
         <div class="table-responsive">
             <table class="table align-middle">
                 <thead><tr><th>Code</th><th>Course</th><th>Units</th><th>Grade</th></tr></thead>
                 <tbody>
                     @forelse($enrollment->courses as $course)
-                        @php($recordedCourse = $student->courses->firstWhere('id', $course->id))
-                        <tr><td class="fw-semibold">{{ $course->code }}</td><td>{{ $course->title }}</td><td>{{ $course->units }}</td><td>{{ $recordedCourse?->pivot?->grade ?? 'Not posted' }}</td></tr>
+                        <tr><td class="fw-semibold">{{ $course->code }}</td><td>{{ $course->title }}</td><td>{{ $course->units }}</td><td>{{ $course->pivot->grade ?? 'Not posted' }}</td></tr>
                     @empty
                         <tr><td colspan="4" class="text-center text-muted py-3">No courses assigned.</td></tr>
                     @endforelse

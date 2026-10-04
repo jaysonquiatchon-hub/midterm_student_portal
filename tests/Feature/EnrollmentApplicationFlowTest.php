@@ -70,26 +70,21 @@ class EnrollmentApplicationFlowTest extends TestCase
         ]);
     }
 
-    public function test_default_database_seeder_populates_program_scoped_courses_for_students(): void
+    public function test_default_database_seeder_does_not_create_demo_student_records(): void
     {
         $this->seed(DatabaseSeeder::class);
 
         $this->assertSame(5, Program::count());
         $this->assertSame(253, Course::count());
-        $this->assertSame(51, Student::count());
-        $this->assertGreaterThan(0, DB::table('course_student')->count());
+        $this->assertSame(0, Student::count());
+        $this->assertSame(0, DB::table('course_student')->count());
     }
 
-    public function test_admin_can_create_update_and_archive_programs_and_subjects(): void
+    public function test_admin_program_pages_are_removed_while_program_data_remains_available(): void
     {
+        $program = Program::create(['code' => 'BSIT', 'name' => 'BS Information Technology']);
         $admin = User::factory()->create(['role' => 'admin']);
         $this->actingAs($admin);
-
-        $this->post('/programs', [
-            'code' => 'BSIT',
-            'name' => 'BS Information Technology',
-        ])->assertRedirect('/programs');
-        $program = Program::where('code', 'BSIT')->firstOrFail();
 
         $this->post('/courses', [
             'code' => 'IT101',
@@ -110,10 +105,12 @@ class EnrollmentApplicationFlowTest extends TestCase
             'program_id' => $program->id,
         ])->assertRedirect('/courses');
         $this->post('/courses/'.$subject->id.'/archive')->assertRedirect('/courses');
-        $this->post('/programs/'.$program->id.'/archive')->assertRedirect('/programs');
 
         $this->assertDatabaseHas('courses', ['id' => $subject->id, 'status' => 'archived']);
-        $this->assertDatabaseHas('programs', ['id' => $program->id, 'status' => 'archived']);
+        $this->assertDatabaseHas('programs', ['id' => $program->id, 'code' => 'BSIT']);
+        $this->get('/programs')->assertNotFound();
+        $this->get('/programs/create')->assertNotFound();
+        $this->get('/programs/'.$program->id.'/edit')->assertNotFound();
     }
 
     public function test_course_codes_can_repeat_between_programs_but_not_within_one_program(): void
@@ -163,15 +160,15 @@ class EnrollmentApplicationFlowTest extends TestCase
         $this->actingAs(User::factory()->create(['role' => 'admin']));
 
         $this->get('/departments')->assertNotFound();
-        $this->get('/programs')->assertOk()->assertSee('BS Information Technology');
-        $this->get('/programs/create')->assertOk();
-        $this->get('/programs/'.$program->id.'/edit')->assertOk();
+        $this->get('/programs')->assertNotFound();
+        $this->get('/programs/create')->assertNotFound();
+        $this->get('/programs/'.$program->id.'/edit')->assertNotFound();
         $this->get('/courses')->assertOk()->assertSee('IT101');
         $this->get('/courses/create')->assertOk()->assertSee('1st Semester');
         $this->get('/courses/'.$subject->id.'/edit')->assertOk();
     }
 
-    public function test_admin_can_archive_a_student_and_archived_students_cannot_sign_in(): void
+    public function test_admin_can_set_student_inactive_and_inactive_students_cannot_sign_in(): void
     {
         $program = Program::create(['code' => 'BSIT', 'name' => 'BS Information Technology']);
         $studentUser = User::factory()->create(['role' => 'student', 'password' => 'portal-password']);
@@ -188,9 +185,21 @@ class EnrollmentApplicationFlowTest extends TestCase
         ]);
         $admin = User::factory()->create(['role' => 'admin']);
 
-        $this->actingAs($admin)->get('/students')->assertOk()->assertSee('Archive');
-        $this->post('/students/'.$student->id.'/archive')->assertRedirect('/students');
-        $this->assertDatabaseHas('students', ['id' => $student->id, 'status' => 'archived']);
+        $this->actingAs($admin)->put('/students/'.$student->id, [
+            'student_number' => $student->student_number,
+            'first_name' => $student->first_name,
+            'middle_name' => null,
+            'last_name' => $student->last_name,
+            'suffix' => null,
+            'email' => $student->email,
+            'contact_number' => null,
+            'address' => null,
+            'birth_date' => $student->birth_date->toDateString(),
+            'year_level' => $student->year_level,
+            'program_id' => $student->program_id,
+            'status' => 'inactive',
+        ])->assertRedirect('/students');
+        $this->assertDatabaseHas('students', ['id' => $student->id, 'status' => 'inactive']);
 
         $this->post('/student/login', [
             'username' => $studentUser->email,
@@ -232,8 +241,8 @@ class EnrollmentApplicationFlowTest extends TestCase
         $this->get('/enrollment/success/'.$application->application_number)
             ->assertOk()
             ->assertSee($application->application_number)
-            ->assertSee('Pending Review')
-            ->assertSee('not officially enrolled yet');
+            ->assertSee('Pending')
+            ->assertSee('The administrator will review your enrollment application');
         $this->assertGuest();
     }
 
@@ -370,7 +379,10 @@ class EnrollmentApplicationFlowTest extends TestCase
             'username' => 'applicant@example.test',
             'password' => 'secure-password',
         ])->assertRedirect('/student/dashboard');
-        $this->get('/student/dashboard')->assertOk()->assertSee('Apply / Submit Requirements');
+        $this->get('/student/dashboard')
+            ->assertOk()
+            ->assertDontSee('Apply / Submit Requirements')
+            ->assertDontSee('>Courses</a>', false);
 
         $this->actingAs($admin)->get($downloadUrl)->assertDownload($document->original_name);
         $this->get('/admin/enrollment-applications/'.$application->application_number)
@@ -408,7 +420,19 @@ class EnrollmentApplicationFlowTest extends TestCase
 
         $this->get('/admin/enrollment-applications')->assertRedirect('/admin/login');
 
+        $program = Program::create(['code' => 'ROLE1', 'name' => 'Role Test Program']);
         $student = User::factory()->create(['role' => 'student']);
+        Student::create([
+            'user_id' => $student->id,
+            'student_number' => 'STU-ROLE-001',
+            'first_name' => 'Casey',
+            'last_name' => 'Student',
+            'email' => $student->email,
+            'birth_date' => '2005-04-10',
+            'program_id' => $program->id,
+            'year_level' => 1,
+            'status' => 'active',
+        ]);
         $this->actingAs($student)
             ->get('/admin/enrollment-applications/'.$application->application_number)
             ->assertForbidden();
@@ -503,6 +527,33 @@ class EnrollmentApplicationFlowTest extends TestCase
         $this->assertStringContainsString('Please submit a clear photo.', $message);
         $this->assertStringNotContainsString("<script>alert('x')</script>", $message);
         $this->assertStringContainsString('You may submit a new application', $message);
+    }
+
+    public function test_applicants_can_check_status_with_their_application_number_and_email(): void
+    {
+        $application = $this->submitPublicApplication();
+        Mail::fake();
+
+        $this->post(route('enrollment.status.lookup'), [
+            'application_number' => $application->application_number,
+            'email' => $application->email,
+        ])->assertOk()->assertSee('Pending');
+
+        $this->actingAs(User::factory()->create(['role' => 'admin']))
+            ->post('/admin/enrollment-applications/'.$application->application_number.'/process', [
+                'action' => 'reject',
+                'rejection_reason' => 'Please upload a clearer document.',
+            ])->assertRedirect();
+
+        $this->post(route('enrollment.status.lookup'), [
+            'application_number' => $application->application_number,
+            'email' => $application->email,
+        ])->assertOk()->assertSee('Rejected')->assertSee('Please upload a clearer document.');
+
+        $this->post(route('enrollment.status.lookup'), [
+            'application_number' => $application->application_number,
+            'email' => 'someone-else@example.test',
+        ])->assertSessionHasErrors('application_number');
     }
 
     public function test_email_failure_does_not_undo_an_application_rejection(): void

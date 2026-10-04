@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Course;
 use App\Models\Student;
+use App\Models\User;
 use Database\Seeders\StudentDemoSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -27,19 +28,20 @@ class StudentDemoSeederTest extends TestCase
             'email' => 'student2026-90001@example.test',
         ]);
 
-        $this->withSession(['portal_access' => true])
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($admin)
             ->get(route('students.index'))
             ->assertOk()
             ->assertViewHas(
                 'students',
-                fn ($students): bool => $students->count() === 10 && $students->total() === 20,
+                fn ($students): bool => $students->count() === 15 && $students->total() === 20,
             );
 
         $student = Student::where('student_number', '2026-90001')->firstOrFail();
         $ownProgramCourse = Course::where('program_id', $student->program_id)->firstOrFail();
         $otherProgramCourse = Course::where('program_id', '!=', $student->program_id)->firstOrFail();
 
-        $this->withSession(['portal_access' => true])
+        $this->actingAs($admin)
             ->get(route('students.show', $student))
             ->assertOk()
             ->assertSee($ownProgramCourse->code)

@@ -4,11 +4,8 @@
 <div class="card border-0 shadow-sm rounded-3 p-4">
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
         <div><h1 class="h3 fw-bold mb-1">{{ $application->application_number }}</h1><p class="text-muted mb-0">Submitted {{ $application->submitted_at?->format('F j, Y g:i A') }}</p></div>
-        <span class="badge bg-{{ $application->status === 'approved' ? 'success' : ($application->status === 'rejected' ? 'danger' : 'secondary') }} fs-6">{{ ucwords(str_replace('_', ' ', $application->status)) }}</span>
+        <span class="badge text-bg-{{ $application->status === 'approved' ? 'success' : ($application->status === 'rejected' ? 'danger' : ($application->status === 'pending' ? 'warning' : 'secondary')) }} fs-6">{{ ucwords(str_replace('_', ' ', $application->status)) }}</span>
     </div>
-    @if(session('warning'))<div class="alert alert-warning">{{ session('warning') }}</div>@endif
-    @if($errors->any())<div class="alert alert-danger">{{ $errors->first() }}</div>@endif
-
     <div class="row g-3">
         <section class="col-md-6"><div class="border rounded p-3 h-100"><h2 class="h5 fw-bold">Personal Information</h2><dl class="row mb-0"><dt class="col-sm-5">Full Name</dt><dd class="col-sm-7">{{ $application->full_name }}</dd><dt class="col-sm-5">Date of Birth</dt><dd class="col-sm-7">{{ $application->birth_date->format('F j, Y') }}</dd><dt class="col-sm-5">Gender</dt><dd class="col-sm-7">{{ $application->gender }}</dd><dt class="col-sm-5">Civil Status</dt><dd class="col-sm-7">{{ $application->civil_status ?? 'Not provided' }}</dd><dt class="col-sm-5">Nationality</dt><dd class="col-sm-7">{{ $application->nationality ?? 'Not provided' }}</dd></dl></div></section>
         <section class="col-md-6"><div class="border rounded p-3 h-100"><h2 class="h5 fw-bold">Contact Information</h2><dl class="row mb-0"><dt class="col-sm-5">Email</dt><dd class="col-sm-7">{{ $application->email }}</dd><dt class="col-sm-5">Contact Number</dt><dd class="col-sm-7">{{ $application->contact_number }}</dd><dt class="col-sm-5">Address</dt><dd class="col-sm-7">{{ $application->address }}</dd></dl></div></section>

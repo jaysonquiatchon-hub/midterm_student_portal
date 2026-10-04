@@ -6,7 +6,6 @@
     <div class="btn-group flex-wrap" role="group" aria-label="Enrollment views">
         <a href="{{ route('admin.enrollment-applications.index') }}" class="btn btn-outline-primary {{ ! $history ? 'active' : '' }}">Pending Applications</a>
         <a href="{{ route('admin.enrollment-applications.history') }}" class="btn btn-outline-primary {{ $history ? 'active' : '' }}">Enrollment History</a>
-        <a href="{{ route('admin.enrollments.index') }}" class="btn btn-outline-primary">Term Enrollment Requests</a>
     </div>
 </div>
 
@@ -29,7 +28,7 @@
                     <td>{{ $application->program->name }}</td>
                     <td>{{ $application->year_level }}</td>
                     <td>{{ $application->submitted_at?->format('M j, Y') }}</td>
-                    <td><span class="badge bg-{{ $application->status === 'approved' ? 'success' : ($application->status === 'rejected' ? 'danger' : 'secondary') }}">{{ ucwords(str_replace('_', ' ', $application->status)) }}</span></td>
+                    <td><span class="badge text-bg-{{ $application->status === 'approved' ? 'success' : ($application->status === 'rejected' ? 'danger' : ($application->status === 'pending' ? 'warning' : 'secondary')) }}">{{ ucwords(str_replace('_', ' ', $application->status)) }}</span></td>
                     <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ route('admin.enrollment-applications.show', $application) }}">View</a></td>
                 </tr>
             @empty

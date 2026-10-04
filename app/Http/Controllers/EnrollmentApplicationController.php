@@ -217,4 +217,30 @@ class EnrollmentApplicationController extends Controller
     {
         return view('enrollment.success', compact('application'));
     }
+
+    public function status(): View
+    {
+        return view('enrollment.status', ['application' => null]);
+    }
+
+    public function checkStatus(Request $request): View
+    {
+        $data = $request->validate([
+            'application_number' => ['required', 'string', 'max:40'],
+            'email' => ['required', 'email:rfc', 'max:255'],
+        ]);
+
+        $application = EnrollmentApplication::query()
+            ->where('application_number', trim($data['application_number']))
+            ->whereRaw('LOWER(email) = ?', [mb_strtolower(trim($data['email']))])
+            ->first();
+
+        if (! $application) {
+            throw ValidationException::withMessages([
+                'application_number' => 'The application number and email address did not match an application.',
+            ]);
+        }
+
+        return view('enrollment.status', compact('application'));
+    }
 }

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Course;
+use App\Models\Enrollment;
+use App\Models\EnrollmentApplication;
 use App\Models\Program;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -42,13 +44,30 @@ class CourseController extends Controller
     {
         return view('courses.edit', [
             'course' => $course,
-            'programs' => Program::query()->where('status', 'active')->orderBy('name')->get(),
+            'programs' => Program::query()
+                ->where('status', 'active')
+                ->orWhereKey($course->program_id)
+                ->orderBy('name')
+                ->get(),
         ]);
     }
 
     public function update(Request $request, Course $course): RedirectResponse
     {
-        $course->update($this->validatedData($request, $course));
+        $data = $this->validatedData($request, $course);
+        $catalogFieldsChanged = collect(['code', 'title', 'units', 'year_level', 'semester', 'program_id'])
+            ->contains(fn (string $field): bool => (string) $course->{$field} !== (string) $data[$field]);
+        $isReferenced = $course->students()->exists()
+            || Enrollment::query()->whereHas('courses', fn ($query) => $query->whereKey($course->id))->exists()
+            || EnrollmentApplication::query()->whereHas('subjects', fn ($query) => $query->whereKey($course->id))->exists();
+
+        if ($catalogFieldsChanged && $isReferenced) {
+            return back()
+                ->withErrors(['course' => 'This subject is part of an enrollment or application history. Archive it and create a new subject to preserve those academic records.'])
+                ->withInput();
+        }
+
+        $course->update($data);
 
         return redirect()->route('courses.index')->with('success', 'Course updated.');
     }

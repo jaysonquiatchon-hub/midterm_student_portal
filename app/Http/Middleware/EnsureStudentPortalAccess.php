@@ -10,10 +10,18 @@ class EnsureStudentPortalAccess
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $request->session()->get('portal_access') && ! $request->user()) {
-            return redirect()
-                ->route('student.login')
-                ->with('warning', 'Unauthorized access! Please enter your access credentials first.');
+        $student = $request->user()?->student;
+
+        if ($request->user()?->role === 'student' && (! $student || $student->status !== 'active')) {
+            auth()->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()->route('student.login')->withErrors([
+                'username' => $student
+                    ? 'This student account is inactive or dropped. Contact the administrator for help.'
+                    : 'This account is not linked to a student profile. Contact the administrator for help.',
+            ]);
         }
 
         return $next($request);

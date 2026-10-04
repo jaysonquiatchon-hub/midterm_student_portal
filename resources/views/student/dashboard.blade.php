@@ -8,8 +8,6 @@
     </div>
     <div class="d-flex flex-wrap gap-2">
         <a href="{{ route('student.profile.edit') }}" class="btn btn-outline-secondary">Edit Profile</a>
-        <a href="{{ route('enrollment.create') }}" class="btn btn-primary">Apply / Submit Requirements</a>
-        <a href="{{ route('student.enrollments.create') }}" class="btn btn-outline-primary">Request Term Enrollment</a>
     </div>
 </div>
 
@@ -55,7 +53,7 @@
                     <td>{{ $application->student_type }}</td>
                     <td>{{ $application->school_year }}</td>
                     <td>{{ $application->semester }}</td>
-                    <td><span class="badge bg-{{ $application->status === 'approved' ? 'success' : ($application->status === 'rejected' ? 'danger' : 'secondary') }}">{{ ucwords(str_replace('_', ' ', $application->status)) }}</span></td>
+                    <td><span class="badge text-bg-{{ $application->status === 'approved' ? 'success' : ($application->status === 'rejected' ? 'danger' : ($application->status === 'pending' ? 'warning' : 'secondary')) }}">{{ ucwords(str_replace('_', ' ', $application->status)) }}</span></td>
                     <td>{{ $application->submitted_at?->format('M j, Y') }}</td>
                 </tr>
             @empty
@@ -84,7 +82,7 @@
                     <td class="text-end"><a href="{{ route('student.enrollments.show', $enrollment) }}" class="btn btn-sm btn-outline-primary">View</a></td>
                 </tr>
             @empty
-                <tr><td colspan="6" class="text-center text-muted py-3">No enrollment requests yet.</td></tr>
+                <tr><td colspan="6" class="text-center text-muted py-3">No enrollment history yet.</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -96,17 +94,17 @@
         <div class="card border-0 shadow-sm rounded-3 mb-3">
             <div class="card-body p-4">
                 <h5 class="fw-bold">{{ $enrollment->program->name ?? 'Curriculum' }} <span class="text-muted fw-normal">· {{ $enrollment->academic_year }} {{ $enrollment->term }}</span></h5>
+                <p class="text-muted small">Total units: <strong>{{ $enrollment->courses->sum('units') }}</strong></p>
                 <div class="table-responsive">
                     <table class="table align-middle mb-0">
                         <thead><tr><th>Code</th><th>Course</th><th>Units</th><th>Grade</th></tr></thead>
                         <tbody>
                             @forelse($enrollment->courses as $course)
-                                @php($recordedCourse = $student->courses->firstWhere('id', $course->id))
                                 <tr>
                                     <td class="fw-semibold">{{ $course->code }}</td>
                                     <td>{{ $course->title }}</td>
                                     <td>{{ $course->units }}</td>
-                                    <td>{{ $recordedCourse?->pivot?->grade ?? 'Not posted' }}</td>
+                                    <td>{{ $course->pivot->grade ?? 'Not posted' }}</td>
                                 </tr>
                             @empty
                                 <tr><td colspan="4" class="text-muted text-center py-3">No courses assigned.</td></tr>
@@ -117,5 +115,19 @@
             </div>
         </div>
     @endforeach
+@endif
+
+@if($otherCourses->isNotEmpty())
+    <h4 class="fw-bold mb-3">Other Recorded Courses and Grades</h4>
+    <div class="table-responsive mb-4">
+        <table class="table table-striped bg-white align-middle">
+            <thead><tr><th>Code</th><th>Subject</th><th>Units</th><th>Grade</th></tr></thead>
+            <tbody>
+                @foreach($otherCourses as $course)
+                    <tr><td class="fw-semibold">{{ $course->code }}</td><td>{{ $course->title }}</td><td>{{ $course->units }}</td><td>{{ $course->pivot->grade ?? 'Not posted' }}</td></tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
 @endif
 @endsection

@@ -4,21 +4,10 @@
 <div class="container py-5">
     <div class="row justify-content-center">
         <div class="col-md-7 col-lg-6">
-            <div class="card border-0 shadow-sm rounded-3">
+            <div class="card auth-card rounded-3">
                 <div class="card-body p-4 p-md-5">
                     <h1 class="h3 text-center fw-bold mb-1">Create Student Account</h1>
                     <p class="text-center text-muted mb-4">Use the details from your approved enrollment notice.</p>
-
-                    @if ($errors->any())
-                        <div class="alert alert-danger" role="alert">
-                            <strong>Please review the following:</strong>
-                            <ul class="mb-0 mt-1">
-                                @foreach ($errors->all() as $message)
-                                    <li>{{ $message }}</li>
-                                @endforeach
-                            </ul>
-                        </div>
-                    @endif
 
                     <form method="POST" action="{{ route('portal.register.submit') }}">
                         @csrf
